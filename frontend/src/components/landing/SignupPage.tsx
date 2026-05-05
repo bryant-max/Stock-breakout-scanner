@@ -30,6 +30,7 @@ export default function SignUpPage() {
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
+    phone: "",
     password: "",
     confirmPassword: "",
   })
@@ -58,6 +59,10 @@ export default function SignUpPage() {
       newErrors.email = "Invalid email format"
     }
 
+    if (formData.phone && !/^\+?[\d\s\-().]{7,15}$/.test(formData.phone)) {
+      newErrors.phone = "Invalid phone number"
+    }
+
     if (!formData.password) {
       newErrors.password = "Password is required"
     } else if (formData.password.length < 8) {
@@ -76,7 +81,7 @@ export default function SignUpPage() {
     e.preventDefault()
     if (validateForm()) {
       setIsLoading(true)
-      const { error } = await signUp(formData.email, formData.password, formData.fullName)
+      const { error } = await signUp(formData.email, formData.password, formData.fullName, formData.phone || undefined)
       setIsLoading(false)
 
       if (error) {
@@ -188,11 +193,11 @@ export default function SignUpPage() {
                       </div>
 
                       {/* OAuth buttons */}
-                      <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div className="mb-6">
                         <motion.button
                           whileHover={{ scale: 1.02, borderColor: '#00ff88' }}
                           whileTap={{ scale: 0.98 }}
-                          className="flex items-center justify-center gap-2 bg-[#0a0a0a] text-white border border-[#222] py-3 px-4 transition-all duration-200 font-mono text-sm hover:bg-[#111]"
+                          className="w-full flex items-center justify-center gap-2 bg-[#0a0a0a] text-white border border-[#222] py-3 px-4 transition-all duration-200 font-mono text-sm hover:bg-[#111]"
                         >
                           <svg className="w-5 h-5" viewBox="0 0 24 24">
                             <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -203,16 +208,6 @@ export default function SignUpPage() {
                           GOOGLE
                         </motion.button>
 
-                        <motion.button
-                          whileHover={{ scale: 1.02, borderColor: '#00ff88' }}
-                          whileTap={{ scale: 0.98 }}
-                          className="flex items-center justify-center gap-2 bg-[#0a0a0a] text-white border border-[#222] py-3 px-4 transition-all duration-200 font-mono text-sm hover:bg-[#111]"
-                        >
-                          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-                          </svg>
-                          APPLE
-                        </motion.button>
                       </div>
 
                       {/* Divider */}
@@ -267,6 +262,27 @@ export default function SignUpPage() {
                           />
                           {errors.email && (
                             <p className="text-[#ff4444] text-xs mt-1 font-mono">{errors.email}</p>
+                          )}
+                        </div>
+
+                        {/* Phone */}
+                        <div>
+                          <label htmlFor="phone" className="block text-xs text-[#00ff88] mb-2 font-mono uppercase tracking-wider">
+                            Phone <span className="text-[#444]">(optional)</span>
+                          </label>
+                          <input
+                            type="tel"
+                            id="phone"
+                            name="phone"
+                            value={formData.phone}
+                            onChange={handleChange}
+                            className={`w-full bg-[#0a0a0a] text-white border ${
+                              errors.phone ? "border-[#ff4444]" : "border-[#222]"
+                            } py-3 px-4 focus:outline-none focus:border-[#00ff88] transition-colors font-mono text-sm placeholder:text-[#444]`}
+                            placeholder="+1 (555) 000-0000"
+                          />
+                          {errors.phone && (
+                            <p className="text-[#ff4444] text-xs mt-1 font-mono">{errors.phone}</p>
                           )}
                         </div>
 
