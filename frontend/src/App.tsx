@@ -24,11 +24,12 @@ const StockMomentumPageLazy = React.lazy(() => import("@/pages/StockMomentumPage
 const PortfolioPageLazy = React.lazy(() => import("@/pages/PortfolioPage"))
 const AiTrainingPageLazy = React.lazy(() => import("@/pages/AiTrainingPage"))
 const ContactPageLazy = React.lazy(() => import("@/pages/ContactPage"))
+const PricingPageLazy = React.lazy(() => import("@/pages/PricingPage"))
 
 function AppContent() {
   const location = useLocation()
 
-  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/contact"
+  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/contact" || location.pathname === "/pricing"
   const isDemoPage = location.pathname === "/demo"
   const isAppShellPage = [
     "/admin",
@@ -76,6 +77,7 @@ function AppContent() {
         <Route path="/ai-training" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><AiTrainingPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><SettingsPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/contact" element={<Suspense fallback={<div className="p-6">Loading…</div>}><ContactPageLazy /></Suspense>} />
+        <Route path="/pricing" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PricingPageLazy /></Suspense>} />
       </Routes>
 
       {/* Sean AI popup on all app shell pages except /ai-insights (full page there) */}
