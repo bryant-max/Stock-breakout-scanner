@@ -76,7 +76,7 @@ async def _notify_watchlist_users(results: List[ScanResult]) -> None:
             # Fetch user email from profiles (PK is `id`, not `user_id`)
             profiles = await (
                 supabase.table("profiles")
-                .select("email")
+                .select("email, phone")
                 .eq("id", user_id)
                 .execute()
             )
@@ -88,22 +88,24 @@ async def _notify_watchlist_users(results: List[ScanResult]) -> None:
             # Fetch user preferences
             prefs_rows = await (
                 supabase.table("user_preferences")
-                .select("email_alerts, push_alerts, alert_threshold, phone_number")
+                .select("email_alerts, push_alerts, alert_threshold")
                 .eq("user_id", user_id)
                 .execute()
             )
             preferences = prefs_rows[0] if prefs_rows else {}
+            # Phone lives in profiles, not user_preferences
+            preferences["phone_number"] = profiles[0].get("phone")
 
             # Respect the user's score threshold (default 80)
             threshold = preferences.get("alert_threshold", 80)
             if scan_result.breakout_score < threshold:
                 continue
 
-            # Skip entirely if no channel is enabled
-            if not preferences.get("email_alerts") and not preferences.get("push_alerts"):
-                continue
-
             plan = await get_user_plan(user_id)
+
+            # Skip if no channel is enabled — include pro plan so SMS-only users aren't dropped
+            if not preferences.get("email_alerts") and not preferences.get("push_alerts") and plan != "pro":
+                continue
 
             # Fetch push subscription endpoint if push is enabled.
             # Requires a `push_subscriptions` table with columns (user_id, subscription_data).

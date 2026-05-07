@@ -49,6 +49,8 @@ async def subscribe_push(
             "subscription_data": subscription_data,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        # Delete any existing subscription before inserting to avoid unique constraint errors on re-subscribe
+        await supabase.table("push_subscriptions").delete().eq("user_id", user_id).execute()
         await supabase.table("push_subscriptions").insert([row]).execute()
         return {"status": "subscribed"}
     except Exception as e:
