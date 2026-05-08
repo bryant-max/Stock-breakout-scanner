@@ -18,6 +18,7 @@ import {
   Sliders,
   LogOut,
   CheckCircle2,
+  Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
@@ -61,7 +62,7 @@ interface SettingsState {
 }
 
 export default function SettingsPage() {
-  const { user, signOut } = useAuth()
+  const { user, isAdmin, signOut } = useAuth()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState("general")
   const [settings, setSettings] = useState<SettingsState>({
@@ -382,6 +383,28 @@ export default function SettingsPage() {
                         </Badge>
                       </div>
                     </div>
+
+                    {isAdmin && (
+                      <div className="space-y-4 pt-6 border-t border-white/10">
+                        <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
+                          <Shield className="h-4 w-4" /> Admin
+                        </h3>
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10">
+                          <div>
+                            <p className="text-sm font-medium text-white">Admin Panel</p>
+                            <p className="text-xs text-white/60">Manage users, subscriptions, and AI knowledge</p>
+                          </div>
+                          <Button
+                            onClick={() => navigate("/admin")}
+                            size="sm"
+                            variant="outline"
+                            className="border-white/20 text-white/70 hover:bg-white/5 shrink-0"
+                          >
+                            Open
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
                     <Button
                       onClick={handleSave}
