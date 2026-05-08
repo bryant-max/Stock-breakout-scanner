@@ -5,11 +5,7 @@ export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, loading } = useAuth()
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-white/60 font-mono text-sm">Verifying access…</div>
-      </div>
-    )
+    return <div className="min-h-screen bg-black" />
   }
 
   if (!user) return <Navigate to="/login" replace />

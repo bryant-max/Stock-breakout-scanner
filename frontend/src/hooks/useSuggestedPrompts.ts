@@ -18,11 +18,6 @@ const ROUTE_PROMPTS: Record<string, SuggestedPrompt[]> = {
     { label: "Stop levels?", text: "Where should I set stop losses for my focus list stocks?" },
     { label: "Add anything?", text: "What stocks should I consider adding to my focus list this week?" },
   ],
-  "/admin": [
-    { label: "Market overview?", text: "Give me a quick market overview — what's the overall tone today?" },
-    { label: "Sector strength?", text: "Which sectors are showing the most strength right now?" },
-    { label: "Trade idea?", text: "What's your best trade idea for today?" },
-  ],
   "/dashboard": [
     { label: "Market overview?", text: "Give me a quick market overview — what's the overall tone today?" },
     { label: "Sector strength?", text: "Which sectors are showing the most strength right now?" },
