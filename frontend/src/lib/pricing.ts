@@ -25,7 +25,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     name: "Core",
     price: 39,
     period: "month",
-    stripePriceId: "price_core_monthly",
+    stripePriceId: import.meta.env.VITE_STRIPE_CORE_PRICE_ID ?? "price_core_monthly",
     description: "Everything you need to find and track breakout setups.",
     buttonText: "Start Free Trial",
     features: [
@@ -47,7 +47,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     name: "Premium",
     price: 79,
     period: "month",
-    stripePriceId: "price_premium_monthly",
+    stripePriceId: import.meta.env.VITE_STRIPE_PREMIUM_PRICE_ID ?? "price_premium_monthly",
     description: "Full-stack edge for serious traders who want every signal.",
     buttonText: "Start Free Trial",
     isPopular: true,

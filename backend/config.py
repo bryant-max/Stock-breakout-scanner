@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     # Stripe
     STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
-    STRIPE_PRICE_ID: Optional[str] = None
+    STRIPE_PRICE_ID: Optional[str] = None  # legacy single-price field
+    STRIPE_CORE_PRICE_ID: Optional[str] = "price_1TUfynJ3UDlKynGyzXjc4t7g"
+    STRIPE_PREMIUM_PRICE_ID: Optional[str] = "price_1TUfzfJ3UDlKynGyr2g2Gsb0"
 
     # SnapTrade
     SNAPTRADE_CLIENT_ID: Optional[str] = None
