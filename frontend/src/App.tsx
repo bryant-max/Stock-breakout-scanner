@@ -27,6 +27,8 @@ const PortfolioPageLazy = React.lazy(() => import("@/pages/PortfolioPage"))
 const AiTrainingPageLazy = React.lazy(() => import("@/pages/AiTrainingPage"))
 const ContactPageLazy = React.lazy(() => import("@/pages/ContactPage"))
 const PricingPageLazy = React.lazy(() => import("@/pages/PricingPage"))
+const TermsPageLazy = React.lazy(() => import("@/pages/TermsPage"))
+const PrivacyPageLazy = React.lazy(() => import("@/pages/PrivacyPage"))
 
 function AppContent() {
   const location = useLocation()
@@ -80,6 +82,8 @@ function AppContent() {
         <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><SettingsPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/contact" element={<Suspense fallback={<div className="p-6">Loading…</div>}><ContactPageLazy /></Suspense>} />
         <Route path="/pricing" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PricingPageLazy /></Suspense>} />
+        <Route path="/terms" element={<Suspense fallback={<div className="p-6">Loading…</div>}><TermsPageLazy /></Suspense>} />
+        <Route path="/privacy" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PrivacyPageLazy /></Suspense>} />
       </Routes>
 
       {/* Sean AI popup on all app shell pages except /ai-insights (full page there) */}

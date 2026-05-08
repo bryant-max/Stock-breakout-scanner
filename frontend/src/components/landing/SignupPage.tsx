@@ -1,8 +1,11 @@
-import React, { useState } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { CanvasRevealEffect } from "@/components/landing/canvas-reveal-effect"
 import { useAuth } from "@/hooks/useAuth"
+import { supabase } from "@/lib/supabase"
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 function MiniNavbar() {
   return (
@@ -26,6 +29,8 @@ function MiniNavbar() {
 export default function SignUpPage() {
   const { signUp, user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const pendingCheckoutRef = useRef(false)
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -40,8 +45,16 @@ export default function SignUpPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
+  // Store plan from URL into localStorage so it survives the signup flow
+  useEffect(() => {
+    const plan = searchParams.get("plan")
+    if (plan === "core" || plan === "premium") {
+      localStorage.setItem("pending_plan", plan)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   React.useEffect(() => {
-    if (user) {
+    if (user && !pendingCheckoutRef.current) {
       navigate("/dashboard", { replace: true })
     }
   }, [user, navigate])
@@ -79,18 +92,44 @@ export default function SignUpPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (validateForm()) {
-      setIsLoading(true)
-      const { error } = await signUp(formData.email, formData.password, formData.fullName, formData.phone || undefined)
+    if (!validateForm()) return
+
+    setIsLoading(true)
+
+    const pendingPlan = localStorage.getItem("pending_plan")
+    if (pendingPlan) pendingCheckoutRef.current = true
+
+    const { error } = await signUp(formData.email, formData.password, formData.fullName, formData.phone || undefined)
+
+    if (error) {
+      pendingCheckoutRef.current = false
+      setErrors((prev) => ({ ...prev, form: error.message }))
       setIsLoading(false)
-
-      if (error) {
-        setErrors((prev) => ({ ...prev, form: error.message }))
-        return
-      }
-
-      navigate("/dashboard", { replace: true })
+      return
     }
+
+    if (pendingPlan) {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const token = data?.session?.access_token
+        if (token) {
+          const res = await fetch(`${API_URL}/api/subscription/checkout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ plan: pendingPlan }),
+          })
+          if (res.ok) {
+            const { checkout_url } = await res.json()
+            localStorage.removeItem("pending_plan")
+            window.location.href = checkout_url
+            return
+          }
+        }
+      } catch { /* fall through to dashboard */ }
+      pendingCheckoutRef.current = false
+    }
+
+    navigate("/dashboard", { replace: true })
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,6 +229,14 @@ export default function SignUpPage() {
                         <p className="text-[#666] font-mono text-sm">
                           Initialize your Orbis terminal
                         </p>
+                        {localStorage.getItem("pending_plan") && (
+                          <div className="mt-3 inline-flex items-center gap-2 border border-[#00ff88]/40 bg-[#00ff88]/10 px-3 py-1.5">
+                            <div className="h-1.5 w-1.5 rounded-full bg-[#00ff88] animate-pulse" />
+                            <span className="font-mono text-xs text-[#00ff88] uppercase tracking-wider">
+                              {localStorage.getItem("pending_plan") === "premium" ? "Premium — $79/mo" : "Core — $39/mo"} · 7-day free trial
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* OAuth buttons */}

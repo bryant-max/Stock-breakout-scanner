@@ -94,8 +94,8 @@ export default function Footer() {
             <div className="h-4 w-px bg-[#222] hidden md:block" />
             <div className="flex items-center gap-4">
               <span className="text-white/20">Legal</span>
-              <a href="#" className="hover:text-[#00ff88] transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-[#00ff88] transition-colors">Terms of Service</a>
+              <Link to="/privacy" className="hover:text-[#00ff88] transition-colors">Privacy Policy</Link>
+              <Link to="/terms" className="hover:text-[#00ff88] transition-colors">Terms of Service</Link>
             </div>
           </div>
 
