@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth"
 
 export default function Navbar() {
   const navigate = useNavigate()
-  const { user, loading } = useAuth()
+  const { user, isAdmin, loading } = useAuth()
   const isSignedIn = !loading && !!user
   const [scrolled, setScrolled] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
@@ -118,13 +118,26 @@ export default function Navbar() {
                 </span>
                 Live
               </motion.div>
+              {isAdmin && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.55 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => navigate("/admin")}
+                  className="border border-yellow-500/60 px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-yellow-400 transition-all hover:border-yellow-400 hover:text-yellow-300"
+                >
+                  Admin
+                </motion.button>
+              )}
               <motion.button
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.6 }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => navigate("/admin")}
+                onClick={() => navigate("/dashboard")}
                 className="border border-[#00ff88] bg-[#00ff88] px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-black transition-all hover:bg-transparent hover:text-[#00ff88]"
               >
                 Dashboard
@@ -204,8 +217,17 @@ export default function Navbar() {
                         </span>
                       )}
                     </div>
+                    {isAdmin && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="border border-yellow-500/60 px-4 py-2 font-bold text-yellow-400 transition-all hover:border-yellow-400"
+                      >
+                        Admin Panel
+                      </Link>
+                    )}
                     <Link
-                      to="/admin"
+                      to="/dashboard"
                       onClick={() => setMobileMenuOpen(false)}
                       className="border border-[#00ff88] bg-[#00ff88] px-4 py-2 font-bold text-black transition-all hover:bg-transparent hover:text-[#00ff88]"
                     >

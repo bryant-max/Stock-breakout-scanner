@@ -1,7 +1,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react'
 import { User, AuthError, Session, AuthChangeEvent } from '@supabase/supabase-js'
-// Update the import path below if '@/lib/supabase' does not exist
 import { supabase } from '../lib/supabase'
+import { isAdminEmail } from '../lib/adminConfig'
 
 interface AuthContextType {
   user: User | null
@@ -19,21 +19,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  const checkAdminStatus = async (userId: string) => {
+  const checkAdminStatus = async (_userId: string, email?: string) => {
+    // Primary: check email against hardcoded allowlist (instant, no DB round-trip)
+    if (isAdminEmail(email)) {
+      setIsAdmin(true)
+      return
+    }
+    // Fallback: check profiles table is_admin flag
     try {
       const { data, error } = await supabase
-        .from('users')
+        .from('profiles')
         .select('is_admin')
-        .eq('id', userId)
+        .eq('id', _userId)
         .single()
-      
-      if (!error && data) {
-        setIsAdmin(data.is_admin || false)
-      } else {
-        setIsAdmin(false)
-      }
-    } catch (err) {
-      console.error('Error checking admin status:', err)
+      setIsAdmin(!error && !!data?.is_admin)
+    } catch {
       setIsAdmin(false)
     }
   }
@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        checkAdminStatus(session.user.id)
+        checkAdminStatus(session.user.id, session.user.email)
       }
       setLoading(false)
     })
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       (_event: AuthChangeEvent, session: Session | null) => {
         setUser(session?.user ?? null)
         if (session?.user) {
-          checkAdminStatus(session.user.id)
+          checkAdminStatus(session.user.id, session.user.email)
         } else {
           setIsAdmin(false)
         }

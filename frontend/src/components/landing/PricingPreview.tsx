@@ -1,8 +1,41 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { PRICING_PLANS, TRIAL_DAYS } from "@/lib/pricing"
+import { PRICING_PLANS, TRIAL_DAYS, type PlanId } from "@/lib/pricing"
+import { useAuth } from "@/hooks/useAuth"
+import { supabase } from "@/lib/supabase"
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 export default function PricingSection() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null)
+
+  const handleSubscribe = async (planId: PlanId) => {
+    if (!user) {
+      navigate(`/signup?plan=${planId}`)
+      return
+    }
+    setLoadingPlan(planId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API_URL}/api/subscription/checkout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ plan: planId }),
+      })
+      if (!res.ok) throw new Error("Checkout failed")
+      const { checkout_url } = await res.json()
+      window.location.href = checkout_url
+    } catch (err) {
+      console.error("Stripe checkout error:", err)
+    } finally {
+      setLoadingPlan(null)
+    }
+  }
 
   return (
     <section id="pricing" className="relative bg-black py-20 sm:py-32">
@@ -26,9 +59,7 @@ export default function PricingSection() {
         <div className="mb-16 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="h-px w-8 bg-[#00ff88]" />
-            <span className="font-mono text-xs uppercase tracking-wider text-[#00ff88]">
-              Plans & Pricing
-            </span>
+            <span className="font-mono text-xs uppercase tracking-wider text-[#00ff88]">Plans & Pricing</span>
             <div className="h-px w-8 bg-[#00ff88]" />
           </div>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white leading-tight mb-6">
@@ -37,10 +68,11 @@ export default function PricingSection() {
           <p className="mx-auto max-w-xl font-mono text-sm text-white/60">
             Start free and scale when you&apos;re ready.
           </p>
-
           <div className="mt-6 inline-flex items-center gap-2 border border-[#00ff88]/30 bg-[#00ff88]/10 px-4 py-2">
             <div className="h-2 w-2 bg-[#00ff88] animate-pulse" />
-            <span className="font-mono text-xs text-[#00ff88]">{TRIAL_DAYS}-day free trial — no credit card required</span>
+            <span className="font-mono text-xs text-[#00ff88]">
+              {TRIAL_DAYS}-day free trial — no credit card required
+            </span>
           </div>
         </div>
 
@@ -50,14 +82,10 @@ export default function PricingSection() {
             <div
               key={plan.id}
               className={`relative border ${
-                plan.isPopular
-                  ? "border-[#00ff88] bg-[#00ff88]/5"
-                  : "border-[#222] bg-[#0a0a0a]"
+                plan.isPopular ? "border-[#00ff88] bg-[#00ff88]/5" : "border-[#222] bg-[#0a0a0a]"
               }`}
             >
-              {plan.isPopular && (
-                <div className="absolute -top-px left-0 right-0 h-px bg-[#00ff88]" />
-              )}
+              {plan.isPopular && <div className="absolute -top-px left-0 right-0 h-px bg-[#00ff88]" />}
 
               <div className="p-6 sm:p-8">
                 <div className="mb-6">
@@ -77,20 +105,19 @@ export default function PricingSection() {
                     <span className="text-4xl font-bold text-white">${plan.price}</span>
                     <span className="font-mono text-sm text-white/40">/ {plan.period}</span>
                   </div>
-                  <p className="font-mono text-xs text-[#00ff88] mt-1">
-                    {TRIAL_DAYS}-day free trial
-                  </p>
+                  <p className="font-mono text-xs text-[#00ff88] mt-1">{TRIAL_DAYS}-day free trial</p>
                 </div>
 
                 <button
-                  onClick={() => navigate("/signup")}
-                  className={`mt-6 w-full py-4 font-mono text-sm font-bold uppercase tracking-wider transition-all ${
+                  onClick={() => handleSubscribe(plan.id)}
+                  disabled={loadingPlan === plan.id}
+                  className={`mt-6 w-full py-4 font-mono text-sm font-bold uppercase tracking-wider transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                     plan.isPopular
                       ? "border border-[#00ff88] bg-[#00ff88] text-black hover:bg-transparent hover:text-[#00ff88]"
                       : "border border-white/20 text-white hover:border-[#00ff88] hover:text-[#00ff88]"
                   }`}
                 >
-                  {plan.buttonText}
+                  {loadingPlan === plan.id ? "Redirecting…" : plan.buttonText}
                 </button>
 
                 <div className="mt-8 space-y-3">
@@ -120,7 +147,6 @@ export default function PricingSection() {
           ))}
         </div>
 
-        {/* Full pricing page link */}
         <div className="mt-10 text-center">
           <button
             onClick={() => navigate("/pricing")}
@@ -133,14 +159,9 @@ export default function PricingSection() {
         {/* Brokerages */}
         <div className="mt-20">
           <div className="text-center mb-8">
-            <h3 className="font-mono text-xs uppercase tracking-wider text-white/40 mb-2">
-              Brokerage Connection
-            </h3>
-            <p className="text-xl font-bold text-white">
-              Trade with your preferred brokerage.
-            </p>
+            <h3 className="font-mono text-xs uppercase tracking-wider text-white/40 mb-2">Brokerage Connection</h3>
+            <p className="text-xl font-bold text-white">Trade with your preferred brokerage.</p>
           </div>
-
           <div className="flex flex-wrap items-center justify-center gap-6">
             {["Alpaca", "Coinbase", "Webull", "Public", "Tastytrade", "Tradier", "E*TRADE", "Charles Schwab"].map((broker) => (
               <div
