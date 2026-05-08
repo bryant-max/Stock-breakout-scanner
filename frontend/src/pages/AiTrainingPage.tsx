@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { BookOpen, Plus, Trash2, Pencil, ToggleLeft, ToggleRight, X, Save, Clock, Tag, ShieldAlert, Youtube, Loader2, FileText, FlaskConical, ChevronDown, ChevronUp } from "lucide-react"
+import { Navigate } from "react-router-dom"
+import { BookOpen, Plus, Trash2, Pencil, ToggleLeft, ToggleRight, X, Save, Clock, Tag, Youtube, Loader2, FileText, FlaskConical, ChevronDown, ChevronUp } from "lucide-react"
 import { AppSidebar } from "@/components/dashboard/Sidebar"
 import { useAuth } from "@/hooks/useAuth"
 import {
@@ -147,18 +148,7 @@ export default function AiTrainingPage() {
   }
 
   if (!isAdmin) {
-    return (
-      <div className="flex min-h-screen bg-black text-white">
-        <AppSidebar />
-        <main className="flex-1 ml-[var(--sidebar-w,60px)] transition-[margin-left] duration-300 ease-in-out flex items-center justify-center">
-          <div className="text-center space-y-3">
-            <ShieldAlert className="h-12 w-12 text-red-400 mx-auto" />
-            <h1 className="text-xl font-bold">Admin Access Required</h1>
-            <p className="text-white/40 text-sm">You don't have permission to access this page.</p>
-          </div>
-        </main>
-      </div>
-    )
+    return <Navigate to="/dashboard" replace />
   }
 
   const activeCount = items.filter((i) => i.is_active).length

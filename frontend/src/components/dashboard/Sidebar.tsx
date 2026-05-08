@@ -22,7 +22,7 @@ const navSections: NavSection[] = [
   {
     title: "Trading",
     items: [
-      { icon: <LayoutDashboard className="h-4 w-4" />, label: "Dashboard", href: "/admin" },
+      { icon: <LayoutDashboard className="h-4 w-4" />, label: "Dashboard", href: "/dashboard" },
       { icon: <Wallet className="h-4 w-4" />, label: "Portfolio", href: "/portfolio" },
       { icon: <Activity className="h-4 w-4" />, label: "Focus List", href: "/focus-list" },
     ],
