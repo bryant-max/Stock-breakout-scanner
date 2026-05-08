@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   Wallet, DollarSign, TrendingUp, TrendingDown, Link2,
   RefreshCw, ExternalLink, ArrowUpRight, ArrowDownRight,
-  Target, Brain, Activity,
+  Target, Brain, Activity, X,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -26,6 +26,9 @@ import { cn } from "@/lib/utils"
 type ConnectionState = "loading" | "unregistered" | "no_accounts" | "connected"
 
 export default function AdminDashboardPage() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [showSuccessBanner, setShowSuccessBanner] = useState(() => searchParams.get("checkout") === "success")
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading")
   const [accounts, setAccounts] = useState<SnapTradeAccount[]>([])
   const [holdings, setHoldings] = useState<Array<{ account: SnapTradeAccount; holdings: SnapTradeHolding[] }>>([])
@@ -161,6 +164,30 @@ export default function AdminDashboardPage() {
         </header>
 
         <main className="pt-24 p-8 space-y-6">
+          {showSuccessBanner && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center justify-between gap-4 border border-[#00ff88]/40 bg-[#00ff88]/10 px-5 py-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-[#00ff88] animate-pulse" />
+                <div>
+                  <p className="font-mono text-sm font-bold text-[#00ff88]">Welcome to Orbis — your free trial is active.</p>
+                  <p className="font-mono text-xs text-[#00ff88]/70 mt-0.5">Your 7-day trial has started. No charge until the trial ends.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSuccessBanner(false)
+                  navigate("/dashboard", { replace: true })
+                }}
+                className="shrink-0 text-[#00ff88]/60 hover:text-[#00ff88] transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
           {error && (
             <Card className="bg-red-500/10 border-red-500/30 p-4">
               <p className="text-red-400 text-sm">{error}</p>
