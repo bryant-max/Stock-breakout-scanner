@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation } from "react-router-dom"
-import React, { Suspense } from "react"
+import React, { Suspense, useEffect } from "react"
 import Navbar from "@/components/landing/Navbar"
 import { SeanPopup } from "@/components/dashboard/SeanPopup"
 import Hero from "@/components/landing/Hero"
@@ -30,6 +30,12 @@ const PricingPageLazy = React.lazy(() => import("@/pages/PricingPage"))
 const TermsPageLazy = React.lazy(() => import("@/pages/TermsPage"))
 const PrivacyPageLazy = React.lazy(() => import("@/pages/PrivacyPage"))
 
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
+
 function AppContent() {
   const location = useLocation()
 
@@ -51,6 +57,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <ScrollToTop />
       {/* Marketing navbar only on landing/marketing pages */}
       {!isAuthPage && !isAppShellPage && <Navbar />}
 

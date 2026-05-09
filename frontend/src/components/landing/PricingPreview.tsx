@@ -71,7 +71,7 @@ export default function PricingSection() {
           <div className="mt-6 inline-flex items-center gap-2 border border-[#00ff88]/30 bg-[#00ff88]/10 px-4 py-2">
             <div className="h-2 w-2 bg-[#00ff88] animate-pulse" />
             <span className="font-mono text-xs text-[#00ff88]">
-              {TRIAL_DAYS}-day free trial — no credit card required
+              {TRIAL_DAYS}-day free trial — card required, charged on day 8
             </span>
           </div>
         </div>
@@ -105,7 +105,7 @@ export default function PricingSection() {
                     <span className="text-4xl font-bold text-white">${plan.price}</span>
                     <span className="font-mono text-sm text-white/40">/ {plan.period}</span>
                   </div>
-                  <p className="font-mono text-xs text-[#00ff88] mt-1">{TRIAL_DAYS}-day free trial</p>
+                  <p className="font-mono text-xs text-[#00ff88] mt-1">{TRIAL_DAYS}-day trial, then billed monthly</p>
                 </div>
 
                 <button
