@@ -60,7 +60,7 @@ export default function PricingPage() {
           <p className="mx-auto max-w-xl font-mono text-sm text-white/60">Two plans. No hidden fees. Both include a {TRIAL_DAYS}-day free trial.</p>
           <div className="mt-8 inline-flex items-center gap-2 border border-[#00ff88]/30 bg-[#00ff88]/10 px-5 py-2.5">
             <div className="h-2 w-2 bg-[#00ff88] animate-pulse" />
-            <span className="font-mono text-xs text-[#00ff88]">{TRIAL_DAYS}-day free trial on all plans — no credit card required</span>
+            <span className="font-mono text-xs text-[#00ff88]">{TRIAL_DAYS}-day trial on all plans — card required, charged on day 8</span>
           </div>
         </div>
 
@@ -90,7 +90,7 @@ export default function PricingPage() {
                     <span className="text-5xl font-bold text-white">${plan.price}</span>
                     <span className="font-mono text-sm text-white/40">/ {plan.period}</span>
                   </div>
-                  <p className="font-mono text-xs text-[#00ff88] mt-2">First {TRIAL_DAYS} days free</p>
+                  <p className="font-mono text-xs text-[#00ff88] mt-2">{TRIAL_DAYS}-day trial, then billed monthly</p>
                 </div>
                 <button
                   onClick={() => handleSubscribe(plan.id)}
@@ -99,7 +99,7 @@ export default function PricingPage() {
                 >
                   {loadingPlan === plan.id ? "Redirecting to Stripe…" : plan.buttonText}
                 </button>
-                <p className="font-mono text-[10px] text-white/30 text-center mt-3">No credit card required</p>
+                <p className="font-mono text-[10px] text-white/30 text-center mt-3">Card required — no charge for {TRIAL_DAYS} days</p>
                 <div className="my-8 border-t border-white/10" />
                 <ul className="space-y-4">
                   {plan.features.map((feature, i) => (
@@ -180,7 +180,7 @@ export default function PricingPage() {
         {/* CTA */}
         <div className="text-center border border-[#00ff88]/20 bg-[#00ff88]/5 p-12 max-w-3xl mx-auto">
           <h2 className="text-3xl font-bold mb-4">Ready to find the next breakout?</h2>
-          <p className="font-mono text-sm text-white/60 mb-8">Start your {TRIAL_DAYS}-day free trial today. No credit card required.</p>
+          <p className="font-mono text-sm text-white/60 mb-8">Start your {TRIAL_DAYS}-day trial today. Card required — you won't be charged until day 8.</p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             {PRICING_PLANS.map((plan) => (
               <button
