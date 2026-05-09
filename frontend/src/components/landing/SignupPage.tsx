@@ -55,7 +55,7 @@ export default function SignUpPage() {
 
   React.useEffect(() => {
     if (user && !pendingCheckoutRef.current) {
-      navigate("/dashboard", { replace: true })
+      navigate(user.email_confirmed_at ? "/dashboard" : "/verify-email", { replace: true })
     }
   }, [user, navigate])
 
@@ -129,7 +129,7 @@ export default function SignUpPage() {
       pendingCheckoutRef.current = false
     }
 
-    navigate("/dashboard", { replace: true })
+    navigate("/verify-email", { replace: true })
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -29,6 +29,7 @@ const ContactPageLazy = React.lazy(() => import("@/pages/ContactPage"))
 const PricingPageLazy = React.lazy(() => import("@/pages/PricingPage"))
 const TermsPageLazy = React.lazy(() => import("@/pages/TermsPage"))
 const PrivacyPageLazy = React.lazy(() => import("@/pages/PrivacyPage"))
+const VerifyEmailPageLazy = React.lazy(() => import("@/pages/VerifyEmailPage"))
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -39,7 +40,7 @@ function ScrollToTop() {
 function AppContent() {
   const location = useLocation()
 
-  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/contact" || location.pathname === "/pricing"
+  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/contact" || location.pathname === "/pricing" || location.pathname === "/verify-email"
   const isDemoPage = location.pathname === "/demo"
   const isAppShellPage = [
     "/admin",
@@ -91,6 +92,7 @@ function AppContent() {
         <Route path="/pricing" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PricingPageLazy /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={<div className="p-6">Loading…</div>}><TermsPageLazy /></Suspense>} />
         <Route path="/privacy" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PrivacyPageLazy /></Suspense>} />
+        <Route path="/verify-email" element={<Suspense fallback={<div className="p-6">Loading…</div>}><VerifyEmailPageLazy /></Suspense>} />
       </Routes>
 
       {/* Sean AI popup on all app shell pages except /ai-insights (full page there) */}

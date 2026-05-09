@@ -70,8 +70,12 @@ async def create_checkout_session(request: Request, user: dict = Depends(get_cur
             customer_email=user["email"],
             line_items=[{"price": price_id, "quantity": 1}],
             mode="subscription",
-            subscription_data={"trial_period_days": TRIAL_PERIOD_DAYS},
-            success_url=f"{frontend_url}/dashboard?checkout=success&plan={plan}",
+            payment_method_collection="always",
+            subscription_data={
+                "trial_period_days": TRIAL_PERIOD_DAYS,
+                "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
+            },
+            success_url=f"{frontend_url}/verify-email?checkout=success&plan={plan}",
             cancel_url=f"{frontend_url}/pricing?checkout=cancelled",
             metadata={"user_id": user["user_id"], "plan": plan},
         )
@@ -193,6 +197,27 @@ async def _handle_checkout_completed(session: dict):
         await supabase.table("subscriptions").insert([subscription_data]).execute()
 
     logger.info(f"Subscription activated: user={user_id} plan={plan}")
+
+    # $1 auth+void to verify card is real — cancelled immediately, no charge
+    try:
+        customer_id = session.get("customer")
+        if customer_id:
+            payment_methods = stripe.PaymentMethod.list(customer=customer_id, type="card")
+            if payment_methods.data:
+                pm = payment_methods.data[0]
+                pi = stripe.PaymentIntent.create(
+                    amount=100,
+                    currency="usd",
+                    customer=customer_id,
+                    payment_method=pm.id,
+                    capture_method="manual",
+                    confirm=True,
+                    description="Card verification hold — voided immediately",
+                )
+                stripe.PaymentIntent.cancel(pi.id)
+                logger.info(f"$1 auth/void completed: user={user_id}")
+    except Exception as e:
+        logger.warning(f"$1 auth/void failed (non-critical): {e}")
 
 
 async def _handle_subscription_updated(subscription: dict):
