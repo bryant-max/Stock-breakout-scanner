@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { supabase } from "@/lib/supabase"
 import { PRICING_PLANS, type PlanId } from "@/lib/pricing"
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const API_URL = import.meta.env.VITE_API_URL ?? ""
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? "")
 
 type Step = "pick-plan" | "account" | "loading" | "checkout"
