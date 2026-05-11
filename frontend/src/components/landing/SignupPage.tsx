@@ -127,11 +127,11 @@ interface AccountFormProps {
   isSubmitting: boolean
   submitError: string | null
   onBack: () => void
-  onSubmit: (email: string, password: string, fullName: string) => Promise<void>
+  onSubmit: (email: string, password: string, fullName: string, phone: string) => Promise<void>
 }
 
 function AccountForm({ plan, canGoBack, isSubmitting, submitError, onBack, onSubmit }: AccountFormProps) {
-  const [formData, setFormData] = useState({ fullName: "", email: "", password: "", confirmPassword: "" })
+  const [formData, setFormData] = useState({ fullName: "", email: "", phone: "", password: "", confirmPassword: "" })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -154,23 +154,25 @@ function AccountForm({ plan, canGoBack, isSubmitting, submitError, onBack, onSub
 
     const fullName = str("fullName").trim()
     const email    = str("email").trim()
+    const phone    = str("phone").trim()
     const password = str("password")           // don't trim passwords
     const confirmPassword = str("confirmPassword")
 
     // Sync DOM values into React state so error messages display correctly
-    setFormData({ fullName, email, password, confirmPassword })
+    setFormData({ fullName, email, phone, password, confirmPassword })
 
     const errs: Record<string, string> = {}
     if (!fullName) errs.fullName = "Name is required"
     if (!email) errs.email = "Email is required"
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Invalid email format"
+    if (phone && !/^\+?[\d\s\-().]{7,15}$/.test(phone)) errs.phone = "Invalid phone number"
     if (!password) errs.password = "Password is required"
     else if (password.length < 8) errs.password = "Password must be at least 8 characters"
     if (password !== confirmPassword) errs.confirmPassword = "Passwords do not match"
 
     if (Object.keys(errs).length) { setErrors(errs); return }
 
-    await onSubmit(email, password, fullName)
+    await onSubmit(email, password, fullName, phone)
   }
 
   const inputClass = (field: string) =>
@@ -231,6 +233,14 @@ function AccountForm({ plan, canGoBack, isSubmitting, submitError, onBack, onSub
               <label className="block text-xs text-[#00ff88] mb-2 font-mono uppercase tracking-wider">Email</label>
               <input type="email" name="email" value={formData.email} onChange={handleChange} className={inputClass("email")} placeholder="your@email.com" />
               {errors.email && <p className="text-[#ff4444] text-xs mt-1 font-mono">{errors.email}</p>}
+            </div>
+
+            <div>
+              <label className="block text-xs text-[#00ff88] mb-2 font-mono uppercase tracking-wider">
+                Phone <span className="text-white/20 normal-case tracking-normal">(optional)</span>
+              </label>
+              <input type="tel" name="phone" value={formData.phone} onChange={handleChange} className={inputClass("phone")} placeholder="+1 (555) 000-0000" />
+              {errors.phone && <p className="text-[#ff4444] text-xs mt-1 font-mono">{errors.phone}</p>}
             </div>
 
             <div>
@@ -462,16 +472,16 @@ export default function SignUpPage() {
   // Called by AccountForm on submit — creates Supabase account then loads checkout.
   // suppressRedirect must be set BEFORE signUp() so the auth state change
   // doesn't trigger the redirect effect before we transition to "checkout".
-  const handleAccountSubmit = useCallback(async (email: string, password: string, fullName: string) => {
+  const handleAccountSubmit = useCallback(async (email: string, password: string, fullName: string, phone: string) => {
     if (!selectedPlan) return
-    console.log("[SignUp] handleAccountSubmit →", { email, plan: selectedPlan })
+    console.log("[SignUp] handleAccountSubmit →", { email, plan: selectedPlan, hasPhone: !!phone })
     setIsSubmitting(true)
     setSubmitError(null)
     // Set BEFORE signUp() so the auth-state-change effect can't redirect while
     // we're in the middle of the async sequence.
     suppressRedirect.current = true
 
-    const { error: signUpError } = await signUp(email, password, fullName)
+    const { error: signUpError } = await signUp(email, password, fullName, phone || undefined)
     if (signUpError) {
       console.log("[SignUp] signUp error:", signUpError.message)
       suppressRedirect.current = false
