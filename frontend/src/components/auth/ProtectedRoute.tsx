@@ -19,5 +19,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
 
+  // Redirect to email verification if email not yet confirmed
+  if (!user.email_confirmed_at) {
+    return <Navigate to="/verify-email" replace />
+  }
+
   return <>{children}</>
 }
