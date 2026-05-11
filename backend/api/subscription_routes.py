@@ -89,6 +89,50 @@ async def create_checkout_session(request: Request, user: dict = Depends(get_cur
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create checkout session")
 
 
+@router.post("/create-checkout-session")
+async def create_embedded_checkout_session(request: Request, user: dict = Depends(get_current_user)):
+    """
+    Create a Stripe Embedded Checkout session.
+    Returns { client_secret } for frontend rendering via @stripe/react-stripe-js.
+    """
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Stripe not configured.")
+
+    body = await request.json()
+    plan = body.get("plan", "core")
+
+    if plan not in PLAN_PRICE_IDS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown plan: {plan}")
+
+    price_id = PLAN_PRICE_IDS[plan]
+    if not price_id:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=f"Price ID for plan '{plan}' not configured.")
+
+    try:
+        frontend_url = settings.FRONTEND_URL.rstrip("/")
+        session = stripe.checkout.Session.create(
+            customer_email=user["email"],
+            line_items=[{"price": price_id, "quantity": 1}],
+            mode="subscription",
+            ui_mode="embedded",
+            payment_method_collection="always",
+            subscription_data={
+                "trial_period_days": TRIAL_PERIOD_DAYS,
+                "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
+            },
+            return_url=f"{frontend_url}/verify-email?checkout=success&plan={plan}&session_id={{CHECKOUT_SESSION_ID}}",
+            metadata={"user_id": user["user_id"], "plan": plan},
+        )
+        return {"client_secret": session.client_secret}
+
+    except stripe.StripeError as e:
+        logger.error(f"Stripe embedded checkout error: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment provider error")
+    except Exception as e:
+        logger.error(f"Create embedded checkout session failed: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create checkout session")
+
+
 @router.post("/portal")
 async def create_portal_session(user: dict = Depends(get_current_user)):
     """Create Stripe customer portal session for subscription management."""
