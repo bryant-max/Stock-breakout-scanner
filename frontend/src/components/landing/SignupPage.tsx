@@ -136,28 +136,41 @@ function AccountForm({ plan, canGoBack, isSubmitting, submitError, onBack, onSub
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
-  const validate = () => {
-    const e: Record<string, string> = {}
-    if (!formData.fullName.trim()) e.fullName = "Name is required"
-    if (!formData.email.trim()) e.email = "Email is required"
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) e.email = "Invalid email format"
-    if (!formData.password) e.password = "Password is required"
-    else if (formData.password.length < 8) e.password = "Password must be at least 8 characters"
-    if (formData.password !== formData.confirmPassword) e.confirmPassword = "Passwords do not match"
-    setErrors(e)
-    return Object.keys(e).length === 0
-  }
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: "" }))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Read from the DOM directly so the form works with both React synthetic events
+  // (normal typing) and native DOM value setters (password managers, test utils,
+  // extensions like 1Password that bypass React's onChange).
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!validate() || isSubmitting) return
-    await onSubmit(formData.email, formData.password, formData.fullName)
+    if (isSubmitting) return
+
+    const els = e.currentTarget.elements
+    const str = (name: string) => ((els.namedItem(name) as HTMLInputElement)?.value ?? "")
+
+    const fullName = str("fullName").trim()
+    const email    = str("email").trim()
+    const password = str("password")           // don't trim passwords
+    const confirmPassword = str("confirmPassword")
+
+    // Sync DOM values into React state so error messages display correctly
+    setFormData({ fullName, email, password, confirmPassword })
+
+    const errs: Record<string, string> = {}
+    if (!fullName) errs.fullName = "Name is required"
+    if (!email) errs.email = "Email is required"
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Invalid email format"
+    if (!password) errs.password = "Password is required"
+    else if (password.length < 8) errs.password = "Password must be at least 8 characters"
+    if (password !== confirmPassword) errs.confirmPassword = "Passwords do not match"
+
+    if (Object.keys(errs).length) { setErrors(errs); return }
+
+    await onSubmit(email, password, fullName)
   }
 
   const inputClass = (field: string) =>
