@@ -385,11 +385,13 @@ export default function SignUpPage() {
   // Fetches the embedded checkout client_secret and transitions to the checkout step.
   // Called both for already-logged-in users (from the effect) and new users (after signup).
   const doFetchCheckout = useCallback(async (planId: PlanId) => {
+    console.log("[SignUp] doFetchCheckout →", planId)
     setStep("loading")
     setCheckoutError(null)
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
+      console.log("[SignUp] session token present:", !!token)
       if (!token) throw new Error("Session not ready — please try again.")
 
       const res = await fetch(`${API_URL}/api/subscription/create-checkout-session`, {
@@ -397,40 +399,51 @@ export default function SignUpPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ plan: planId }),
       })
+      console.log("[SignUp] checkout-session response status:", res.status)
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
         throw new Error(b?.detail ?? "Failed to start checkout.")
       }
       const { client_secret } = await res.json()
+      console.log("[SignUp] client_secret obtained → transitioning to checkout step")
       localStorage.removeItem("pending_plan")
       setClientSecret(client_secret)
       setStep("checkout")
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong."
+      console.log("[SignUp] doFetchCheckout error:", msg)
       setCheckoutError(msg)
-      // Stay on "loading" step so the error is shown — don't navigate away
+      // Stay on "loading" step to show the error — do NOT navigate away
     } finally {
       suppressRedirect.current = false
       setIsSubmitting(false)
     }
   }, [])
 
-  // Handle already-logged-in users:
-  // - With a plan → skip account form, fetch checkout directly
-  // - Without a plan → redirect to dashboard/verify-email
+  // Auth state effect: handles already-logged-in users.
+  // Rule: if selectedPlan is set, NEVER navigate away — always load checkout.
+  //       Only redirect to dashboard/verify-email when there is no plan.
+  // suppressRedirect blocks the doFetchCheckout call (not the return) so a
+  // form submission in progress doesn't trigger a second concurrent fetch.
   useEffect(() => {
-    if (authLoading) return
-    if (!user) return
-    if (suppressRedirect.current) return
+    console.log("[SignUp] auth effect →", { user: !!user, authLoading, step, selectedPlan, suppress: suppressRedirect.current })
+    if (authLoading || !user) return
     if (step === "checkout" || step === "loading") return
 
     if (selectedPlan) {
-      suppressRedirect.current = true
-      doFetchCheckout(selectedPlan)
-      return
+      // Has a plan: never navigate away. Only start a fetch if one isn't running.
+      if (!suppressRedirect.current) {
+        console.log("[SignUp] logged-in + plan → starting checkout fetch")
+        suppressRedirect.current = true
+        doFetchCheckout(selectedPlan)
+      }
+      return // ← always return; never fall through to navigate
     }
 
-    navigate(user.email_confirmed_at ? "/dashboard" : "/verify-email", { replace: true })
+    // No plan selected: redirect away
+    const dest = user.email_confirmed_at ? "/dashboard" : "/verify-email"
+    console.log("[SignUp] no plan → redirecting to", dest)
+    navigate(dest, { replace: true })
   }, [user, authLoading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Called by AccountForm on submit — creates Supabase account then loads checkout.
@@ -438,18 +451,23 @@ export default function SignUpPage() {
   // doesn't trigger the redirect effect before we transition to "checkout".
   const handleAccountSubmit = useCallback(async (email: string, password: string, fullName: string) => {
     if (!selectedPlan) return
+    console.log("[SignUp] handleAccountSubmit →", { email, plan: selectedPlan })
     setIsSubmitting(true)
     setSubmitError(null)
-    suppressRedirect.current = true  // ← prevent redirect when user state updates after signup
+    // Set BEFORE signUp() so the auth-state-change effect can't redirect while
+    // we're in the middle of the async sequence.
+    suppressRedirect.current = true
 
     const { error: signUpError } = await signUp(email, password, fullName)
     if (signUpError) {
+      console.log("[SignUp] signUp error:", signUpError.message)
       suppressRedirect.current = false
       setIsSubmitting(false)
       setSubmitError(signUpError.message)
       return
     }
 
+    console.log("[SignUp] signUp success → fetching checkout")
     await doFetchCheckout(selectedPlan)
   }, [selectedPlan, signUp, doFetchCheckout])
 
