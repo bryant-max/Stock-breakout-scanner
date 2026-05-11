@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { loadStripe } from "@stripe/stripe-js"
@@ -11,8 +11,9 @@ import { PRICING_PLANS, type PlanId } from "@/lib/pricing"
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? "")
 
-type Step = "pick-plan" | "account" | "checkout"
+type Step = "pick-plan" | "account" | "loading" | "checkout"
 
+// ── Mini navbar ───────────────────────────────────────────────────────────────
 function MiniNavbar() {
   return (
     <motion.header
@@ -29,6 +30,7 @@ function MiniNavbar() {
   )
 }
 
+// ── Plan badge ────────────────────────────────────────────────────────────────
 function PlanBadge({ planId }: { planId: PlanId }) {
   const plan = PRICING_PLANS.find((p) => p.id === planId)
   if (!plan) return null
@@ -42,7 +44,21 @@ function PlanBadge({ planId }: { planId: PlanId }) {
   )
 }
 
-// ── Plan Picker (Scenario C: no plan in URL) ─────────────────────────────────
+// ── Eye icon ──────────────────────────────────────────────────────────────────
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+    </svg>
+  ) : (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  )
+}
+
+// ── Plan picker (Scenario C: /signup with no ?plan= param) ───────────────────
 function PlanPicker({ onSelect }: { onSelect: (plan: PlanId) => void }) {
   return (
     <motion.div
@@ -59,7 +75,6 @@ function PlanPicker({ onSelect }: { onSelect: (plan: PlanId) => void }) {
         </h1>
         <p className="text-[#666] font-mono text-sm">7-day free trial on all plans. Card required.</p>
       </div>
-
       <div className="grid md:grid-cols-2 gap-4">
         {PRICING_PLANS.map((plan) => (
           <button
@@ -105,21 +120,21 @@ function PlanPicker({ onSelect }: { onSelect: (plan: PlanId) => void }) {
   )
 }
 
-// ── Account Form ─────────────────────────────────────────────────────────────
+// ── Account form ──────────────────────────────────────────────────────────────
 interface AccountFormProps {
   plan: PlanId
   canGoBack: boolean
+  isSubmitting: boolean
+  submitError: string | null
   onBack: () => void
-  onSuccess: (clientSecret: string) => void
+  onSubmit: (email: string, password: string, fullName: string) => Promise<void>
 }
 
-function AccountForm({ plan, canGoBack, onBack, onSuccess }: AccountFormProps) {
-  const { signUp } = useAuth()
+function AccountForm({ plan, canGoBack, isSubmitting, submitError, onBack, onSubmit }: AccountFormProps) {
   const [formData, setFormData] = useState({ fullName: "", email: "", password: "", confirmPassword: "" })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -141,37 +156,8 @@ function AccountForm({ plan, canGoBack, onBack, onSuccess }: AccountFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validate()) return
-    setIsLoading(true)
-
-    const { error: signUpError } = await signUp(formData.email, formData.password, formData.fullName)
-    if (signUpError) {
-      setErrors({ form: signUpError.message })
-      setIsLoading(false)
-      return
-    }
-
-    try {
-      const { data } = await supabase.auth.getSession()
-      const token = data?.session?.access_token
-      if (!token) throw new Error("No session after signup")
-
-      const res = await fetch(`${API_URL}/api/subscription/create-checkout-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ plan }),
-      })
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}))
-        throw new Error(b?.detail ?? "Failed to create checkout session")
-      }
-      const { client_secret } = await res.json()
-      localStorage.removeItem("pending_plan")
-      onSuccess(client_secret)
-    } catch (err) {
-      setErrors({ form: err instanceof Error ? err.message : "Something went wrong. Try again." })
-      setIsLoading(false)
-    }
+    if (!validate() || isSubmitting) return
+    await onSubmit(formData.email, formData.password, formData.fullName)
   }
 
   const inputClass = (field: string) =>
@@ -195,7 +181,6 @@ function AccountForm({ plan, canGoBack, onBack, onSuccess }: AccountFormProps) {
         <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-[#00ff88]" />
 
         <div className="bg-black/90 backdrop-blur-sm border border-[#222] p-8">
-          {/* Terminal header */}
           <div className="flex items-center gap-2 mb-6 pb-4 border-b border-[#222]">
             <div className="flex gap-1.5">
               <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
@@ -219,7 +204,9 @@ function AccountForm({ plan, canGoBack, onBack, onSuccess }: AccountFormProps) {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {errors.form && <p className="text-[#ff4444] text-xs font-mono border border-[#ff4444]/20 bg-[#ff4444]/5 px-3 py-2">{errors.form}</p>}
+            {submitError && (
+              <p className="text-[#ff4444] text-xs font-mono border border-[#ff4444]/20 bg-[#ff4444]/5 px-3 py-2">{submitError}</p>
+            )}
 
             <div>
               <label className="block text-xs text-[#00ff88] mb-2 font-mono uppercase tracking-wider">Full Name</label>
@@ -257,12 +244,12 @@ function AccountForm({ plan, canGoBack, onBack, onSuccess }: AccountFormProps) {
 
             <motion.button
               type="submit"
-              disabled={isLoading}
+              disabled={isSubmitting}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="w-full bg-[#00ff88] hover:bg-[#00cc6a] text-black font-bold py-3 px-4 transition-all font-mono text-sm uppercase tracking-wider mt-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {isLoading ? (
+              {isSubmitting ? (
                 <>
                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -286,27 +273,54 @@ function AccountForm({ plan, canGoBack, onBack, onSuccess }: AccountFormProps) {
   )
 }
 
-// ── Eye icon ─────────────────────────────────────────────────────────────────
-function EyeIcon({ open }: { open: boolean }) {
-  return open ? (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-    </svg>
-  ) : (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-    </svg>
+// ── Checkout loading ──────────────────────────────────────────────────────────
+function CheckoutLoading({ plan, error, onRetry }: { plan: PlanId; error: string | null; onRetry?: () => void }) {
+  const planInfo = PRICING_PLANS.find((p) => p.id === plan)
+  return (
+    <motion.div
+      key="loading"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      className="w-full max-w-md text-center"
+    >
+      <div className="border border-[#222] bg-[#0a0a0a] p-10">
+        {error ? (
+          <>
+            <div className="w-12 h-12 border border-[#ff4444]/40 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-[#ff4444]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <p className="font-mono text-sm text-[#ff4444] mb-4">{error}</p>
+            {onRetry && (
+              <button onClick={onRetry} className="font-mono text-xs text-[#00ff88] border border-[#00ff88]/40 px-4 py-2 hover:bg-[#00ff88]/10 transition-all">
+                Try again
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="w-12 h-12 border border-[#00ff88]/40 flex items-center justify-center mx-auto mb-4">
+              <svg className="animate-spin w-6 h-6 text-[#00ff88]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+            <p className="font-mono text-sm text-white mb-1">Setting up payment…</p>
+            <p className="font-mono text-xs text-white/40">
+              {planInfo?.name} — ${planInfo?.price}/mo · 7-day trial
+            </p>
+          </>
+        )}
+      </div>
+    </motion.div>
   )
 }
 
-// ── Embedded Checkout Step ───────────────────────────────────────────────────
-interface CheckoutStepProps {
-  plan: PlanId
-  clientSecret: string
-}
-
-function CheckoutStep({ plan, clientSecret }: CheckoutStepProps) {
+// ── Embedded checkout step ────────────────────────────────────────────────────
+function CheckoutStep({ plan, clientSecret }: { plan: PlanId; clientSecret: string }) {
   const planInfo = PRICING_PLANS.find((p) => p.id === plan)
   const fetchClientSecret = useCallback(() => Promise.resolve(clientSecret), [clientSecret])
 
@@ -319,7 +333,6 @@ function CheckoutStep({ plan, clientSecret }: CheckoutStepProps) {
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="w-full max-w-xl"
     >
-      {/* Plan summary */}
       <div className="border border-[#222] bg-[#0a0a0a] p-4 mb-4 flex items-center justify-between">
         <div>
           <p className="font-mono text-xs text-white/40 uppercase tracking-wider">Step 2 of 2 — Payment</p>
@@ -335,8 +348,6 @@ function CheckoutStep({ plan, clientSecret }: CheckoutStepProps) {
           <p className="font-mono text-[10px] text-white/30 mt-0.5">Card required — charged on day 8</p>
         </div>
       </div>
-
-      {/* Stripe Embedded Checkout */}
       <div className="border border-[#222] bg-[#0a0a0a] overflow-hidden">
         <EmbeddedCheckoutProvider stripe={stripePromise} options={{ fetchClientSecret }}>
           <EmbeddedCheckout />
@@ -346,9 +357,9 @@ function CheckoutStep({ plan, clientSecret }: CheckoutStepProps) {
   )
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function SignUpPage() {
-  const { user } = useAuth()
+  const { user, loading: authLoading, signUp } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
@@ -359,18 +370,88 @@ export default function SignUpPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(validUrlPlan)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [fromPicker, setFromPicker] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
+
+  // Blocks the redirect effect from firing during async signup + checkout fetch
+  const suppressRedirect = useRef(false)
 
   // Persist plan from URL
   useEffect(() => {
     if (validUrlPlan) localStorage.setItem("pending_plan", validUrlPlan)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redirect already-logged-in users
-  useEffect(() => {
-    if (user && step !== "checkout") {
-      navigate(user.email_confirmed_at ? "/dashboard" : "/verify-email", { replace: true })
+  // Fetches the embedded checkout client_secret and transitions to the checkout step.
+  // Called both for already-logged-in users (from the effect) and new users (after signup).
+  const doFetchCheckout = useCallback(async (planId: PlanId) => {
+    setStep("loading")
+    setCheckoutError(null)
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      if (!token) throw new Error("Session not ready — please try again.")
+
+      const res = await fetch(`${API_URL}/api/subscription/create-checkout-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan: planId }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b?.detail ?? "Failed to start checkout.")
+      }
+      const { client_secret } = await res.json()
+      localStorage.removeItem("pending_plan")
+      setClientSecret(client_secret)
+      setStep("checkout")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong."
+      setCheckoutError(msg)
+      // Stay on "loading" step so the error is shown — don't navigate away
+    } finally {
+      suppressRedirect.current = false
+      setIsSubmitting(false)
     }
-  }, [user, step, navigate])
+  }, [])
+
+  // Handle already-logged-in users:
+  // - With a plan → skip account form, fetch checkout directly
+  // - Without a plan → redirect to dashboard/verify-email
+  useEffect(() => {
+    if (authLoading) return
+    if (!user) return
+    if (suppressRedirect.current) return
+    if (step === "checkout" || step === "loading") return
+
+    if (selectedPlan) {
+      suppressRedirect.current = true
+      doFetchCheckout(selectedPlan)
+      return
+    }
+
+    navigate(user.email_confirmed_at ? "/dashboard" : "/verify-email", { replace: true })
+  }, [user, authLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Called by AccountForm on submit — creates Supabase account then loads checkout.
+  // suppressRedirect must be set BEFORE signUp() so the auth state change
+  // doesn't trigger the redirect effect before we transition to "checkout".
+  const handleAccountSubmit = useCallback(async (email: string, password: string, fullName: string) => {
+    if (!selectedPlan) return
+    setIsSubmitting(true)
+    setSubmitError(null)
+    suppressRedirect.current = true  // ← prevent redirect when user state updates after signup
+
+    const { error: signUpError } = await signUp(email, password, fullName)
+    if (signUpError) {
+      suppressRedirect.current = false
+      setIsSubmitting(false)
+      setSubmitError(signUpError.message)
+      return
+    }
+
+    await doFetchCheckout(selectedPlan)
+  }, [selectedPlan, signUp, doFetchCheckout])
 
   const handlePlanSelect = (plan: PlanId) => {
     setSelectedPlan(plan)
@@ -379,13 +460,10 @@ export default function SignUpPage() {
     setStep("account")
   }
 
-  const handleAccountSuccess = (secret: string) => {
-    setClientSecret(secret)
-    setStep("checkout")
-  }
-
-  const handleBack = () => {
-    setStep("pick-plan")
+  const handleRetryCheckout = () => {
+    if (!selectedPlan) return
+    suppressRedirect.current = true
+    doFetchCheckout(selectedPlan)
   }
 
   return (
@@ -419,14 +497,26 @@ export default function SignUpPage() {
 
         <div className="flex flex-1 items-center justify-center px-6 py-24">
           <AnimatePresence mode="wait">
-            {step === "pick-plan" && <PlanPicker key="pick-plan" onSelect={handlePlanSelect} />}
+            {step === "pick-plan" && (
+              <PlanPicker key="pick-plan" onSelect={handlePlanSelect} />
+            )}
             {step === "account" && selectedPlan && (
               <AccountForm
                 key="account"
                 plan={selectedPlan}
                 canGoBack={fromPicker}
-                onBack={handleBack}
-                onSuccess={handleAccountSuccess}
+                isSubmitting={isSubmitting}
+                submitError={submitError}
+                onBack={() => setStep("pick-plan")}
+                onSubmit={handleAccountSubmit}
+              />
+            )}
+            {step === "loading" && selectedPlan && (
+              <CheckoutLoading
+                key="loading"
+                plan={selectedPlan}
+                error={checkoutError}
+                onRetry={checkoutError ? handleRetryCheckout : undefined}
               />
             )}
             {step === "checkout" && selectedPlan && clientSecret && (
