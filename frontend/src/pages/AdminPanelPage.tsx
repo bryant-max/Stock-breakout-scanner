@@ -45,7 +45,7 @@ async function adminFetch(path: string, token: string | undefined, options: Requ
 
 // ── Sub-sections ──────────────────────────────────────────────────────────
 
-function OverviewSection({ token }: { token: string | undefined }) {
+function OverviewSection() {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,14 +54,37 @@ function OverviewSection({ token }: { token: string | undefined }) {
     setLoading(true)
     setError(null)
     try {
-      const data = await adminFetch("/api/admin/stats", token)
-      setStats(data)
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, created_at')
+        .order('created_at', { ascending: false })
+
+      const { data: subs } = await supabase
+        .from('subscriptions')
+        .select('user_id, plan, status')
+
+      const activeSubs = (subs || []).filter((s: any) => ['active', 'trialing'].includes(s.status))
+      const planBreakdown: Record<string, number> = {}
+      for (const s of subs || []) {
+        const plan = (s as any).plan || 'free'
+        planBreakdown[plan] = (planBreakdown[plan] || 0) + 1
+      }
+      const prices: Record<string, number> = { core: 39, premium: 79 }
+      const revenue = activeSubs.reduce((sum: number, s: any) => sum + (prices[s.plan] || 0), 0)
+
+      setStats({
+        total_users: (profiles || []).length,
+        active_subscriptions: activeSubs.length,
+        monthly_revenue_estimate: revenue,
+        plan_breakdown: planBreakdown,
+        recent_signups: (profiles || []).slice(0, 10),
+      })
     } catch (e: any) {
-      setError(e.message)
+      setError(e.message ?? 'Failed to load stats')
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -345,7 +368,7 @@ function KnowledgeSection({ token }: { token: string | undefined }) {
   )
 }
 
-function UsersSection({ token }: { token: string | undefined }) {
+function UsersSection() {
   const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -355,27 +378,60 @@ function UsersSection({ token }: { token: string | undefined }) {
     setLoading(true)
     setError(null)
     try {
-      const data = await adminFetch("/api/admin/users", token)
-      setUsers(Array.isArray(data) ? data : [])
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, phone, is_admin, created_at')
+        .order('created_at', { ascending: false })
+
+      if (profilesError) throw profilesError
+
+      const { data: subs, error: subsError } = await supabase
+        .from('subscriptions')
+        .select('user_id, plan, status, stripe_customer_id')
+
+      if (subsError) throw subsError
+
+      const subMap = Object.fromEntries((subs || []).map((s: any) => [s.user_id, s]))
+
+      setUsers((profiles || []).map((p: any) => ({
+        ...p,
+        plan: subMap[p.id]?.plan ?? 'free',
+        subscription_status: subMap[p.id]?.status ?? 'none',
+        stripe_customer_id: subMap[p.id]?.stripe_customer_id ?? null,
+      })))
     } catch (e: any) {
-      setError(e.message)
+      setError(e.message ?? 'Failed to load users')
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
   const updatePlan = async (userId: string, plan: string) => {
     setUpdatingId(userId)
     try {
-      await adminFetch(`/api/admin/users/${userId}/plan`, token, {
-        method: "PATCH",
-        body: JSON.stringify({ plan }),
-      })
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, plan } : u))
+      const { data: existing } = await supabase
+        .from('subscriptions')
+        .select('user_id')
+        .eq('user_id', userId)
+        .single()
+
+      if (existing) {
+        const { error } = await supabase
+          .from('subscriptions')
+          .update({ plan, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('subscriptions')
+          .insert({ user_id: userId, plan, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        if (error) throw error
+      }
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, plan } : u))
     } catch (e: any) {
-      setError(e.message)
+      setError(e.message ?? 'Failed to update plan')
     } finally {
       setUpdatingId(null)
     }
@@ -539,10 +595,10 @@ export default function AdminPanelPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
           >
-            {activeTab === "overview" && <OverviewSection token={token} />}
+            {activeTab === "overview" && <OverviewSection />}
             {activeTab === "plan-switcher" && <PlanSwitcherSection />}
             {activeTab === "knowledge" && <KnowledgeSection token={token} />}
-            {activeTab === "users" && <UsersSection token={token} />}
+            {activeTab === "users" && <UsersSection />}
           </motion.div>
         </div>
       </main>
