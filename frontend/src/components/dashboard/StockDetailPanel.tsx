@@ -19,7 +19,7 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
   useEffect(() => {
     if (scan?.symbol) {
       checkInWatchlist(scan.symbol).then((res) => setInWatchlist(res.in_watchlist))
-      setShowOptions(false) // reset when stock changes
+      setShowOptions(false)
     }
   }, [scan?.symbol])
 
@@ -35,32 +35,34 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
   if (!scan) return null
 
   const fmt = (v: number, d = 2) => v.toFixed(d)
-  const fmtCap = (v?: number) => { if (!v) return 'N/A'; if (v>=1e12) return '$'+(v/1e12).toFixed(2)+' T'; if (v>=1e9) return '$'+(v/1e9).toFixed(2)+' B'; return '$'+(v/1e6).toFixed(2)+' M' }
-  const fmtVol = (v: number) => v>=1e6?+(v/1e6).toFixed(2)+'M':+(v/1e3).toFixed(0)+'K'
+  const fmtCap = (v?: number) => {
+    if (!v) return 'N/A'
+    if (v >= 1e12) return '$' + (v / 1e12).toFixed(2) + ' T'
+    if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + ' B'
+    return '$' + (v / 1e6).toFixed(2) + ' M'
+  }
+  const fmtVol = (v: number) => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : (v / 1e3).toFixed(0) + 'K'
   const emaAligned = scan.price > scan.ema21 && scan.ema21 > scan.ema50 && scan.ema50 > scan.ema200
 
   return (
     <div className="fixed inset-y-0 right-0 w-full md:w-[900px] bg-zinc-900 border-l border-zinc-800 shadow-2xl overflow-y-auto z-50">
-      {/* Header */}
       <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-6 flex items-center justify-between z-10">
         <div>
           <h2 className="text-2xl font-bold text-white">{scan.symbol}</h2>
           <p className="text-sm text-zinc-400">{fmtCap(scan.market_cap)}</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Options chain toggle */}
           <button
             onClick={() => setShowOptions(!showOptions)}
-            className={"p-2 transition-colors rounded-lg " + (showOptions ? "text-blue-400 bg-blue-500/20 hover:bg-blue-500/30" : "text-zinc-400 hover:text-blue-400 hover:bg-zinc-800")}
-            title={showOptions ? "Hide options chain" : "Show options chain"}
+            className={"p-2 transition-colors rounded-lg " + (showOptions ? "text-blue-400 bg-blue-500/20" : "text-zinc-400 hover:text-blue-400 hover:bg-zinc-800")}
+            title={showOptions ? "Hide options chain" : "View options chain"}
           >
             <Zap size={20} />
           </button>
           <button
             onClick={toggleWatchlist}
             disabled={watchlistLoading}
-            className={"p-2 transition-colors rounded-lg " + (inWatchlist ? "text-pink-400 bg-pink-500/20 hover:bg-pink-500/30" : "text-zinc-400 hover:text-pink-400 hover:bg-zinc-800")}
-            title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+            className={"p-2 transition-colors rounded-lg " + (inWatchlist ? "text-pink-400 bg-pink-500/20" : "text-zinc-400 hover:text-pink-400 hover:bg-zinc-800")}
           >
             {watchlistLoading ? <Loader2 size={20} className="animate-spin" /> : <Heart size={20} fill={inWatchlist ? "currentColor" : "none"} />}
           </button>
@@ -71,72 +73,129 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Chart */}
         <div className="bg-zinc-800/50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-zinc-400 uppercase mb-4">Price Action & Trend Analysis</h3>
+          <h3 className="text-sm font-semibold text-zinc-400 uppercase mb-4">Price Action</h3>
           <StockChart scan={scan} />
         </div>
 
-        {/* Options Chain (expandable) */}
         {showOptions && (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-zinc-400 uppercase flex items-center gap-2"><Zap size={14} className="text-blue-400" />Live Options Chain — {scan.symbol}</h3>
+              <h3 className="text-sm font-semibold text-zinc-400 uppercase flex items-center gap-2">
+                <Zap size={14} className="text-blue-400" />Options Chain
+              </h3>
               <div className="flex border border-zinc-700 rounded overflow-hidden">
-                <button onClick={() => setOptionsPaper(true)} className={"px-3 py-1 text-xs font-mono " + (optionsPaper ? "bg-amber-600/20 text-amber-400" : "text-zinc-400 hover:text-white")}><FlaskConical size={10} className="inline mr-1"/>Paper</button>
-                <button onClick={() => setOptionsPaper(false)} className={"px-3 py-1 text-xs font-mono " + (!optionsPaper ? "bg-emerald-600/20 text-emerald-400" : "text-zinc-400 hover:text-white")}>Live</button>
+                <button onClick={() => setOptionsPaper(true)} className={"px-3 py-1 text-xs font-mono " + (optionsPaper ? "bg-amber-600/20 text-amber-400" : "text-zinc-400")}>
+                  <FlaskConical size={10} className="inline mr-1" />Paper
+                </button>
+                <button onClick={() => setOptionsPaper(false)} className={"px-3 py-1 text-xs font-mono " + (!optionsPaper ? "bg-emerald-600/20 text-emerald-400" : "text-zinc-400")}>
+                  Live
+                </button>
               </div>
             </div>
             <OptionsChain symbol={scan.symbol} spotPrice={scan.price} isPaper={optionsPaper} />
           </div>
         )}
 
-        {/* Price & Trigger */}
         <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-semibold text-zinc-400 uppercase">Breakout Setup</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div><p className="text-xs text-zinc-500 mb-1">Current Price</p><p className="text-2xl font-bold text-white">{${fmt(scan.price)}</p></div>
-            <div><p className="text-xs text-zinc-500 mb-1">Trigger Price</p><p className="text-2xl font-bold text-cyan-400">{${fmt(scan.trigger_price)}</p></div>
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">Current Price</p>
+              <p className="text-2xl font-bold text-white">{'$'}{fmt(scan.price)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">Trigger Price</p>
+              <p className="text-2xl font-bold text-cyan-400">{'$'}{fmt(scan.trigger_price)}</p>
+            </div>
           </div>
           <div className="pt-3 border-t border-zinc-700">
-            <div className="flex items-center justify-between"><span className="text-sm text-zinc-400">Distance to Trigger</span><span className="text-lg font-bold text-cyan-400">{fmt(scan.distance_pct)}%</span></div>
-            <div className="mt-2 bg-zinc-700 rounded-full h-2 overflow-hidden"><div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: Math.min(100,(scan.distance_pct/5)*100)+"%" }} /></div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-400">Distance to Trigger</span>
+              <span className="text-lg font-bold text-cyan-400">{fmt(scan.distance_pct)}%</span>
+            </div>
+            <div className="mt-2 bg-zinc-700 rounded-full h-2 overflow-hidden">
+              <div className="bg-cyan-500 h-full" style={{ width: Math.min(100, (scan.distance_pct / 5) * 100) + "%" }} />
+            </div>
           </div>
         </div>
 
-        {/* Score */}
         <div className="bg-zinc-800/50 rounded-lg p-4">
           <h3 className="text-sm font-semibold text-zinc-400 uppercase mb-3">Quality Score</h3>
           <div className="flex items-end gap-4">
             <div className="text-5xl font-bold text-cyan-400">{scan.breakout_score}</div>
-            <div className="flex-1 pb-2"><div className="bg-zinc-700 rounded-full h-3 overflow-hidden"><div className={"h-full transition-all duration-500 " + (scan.breakout_score>=80?"bg-green-500":scan.breakout_score>=70?"bg-yellow-500":"bg-orange-500")} style={{ width: scan.breakout_score+"%" }} /></div></div>
+            <div className="flex-1 pb-2">
+              <div className="bg-zinc-700 rounded-full h-3 overflow-hidden">
+                <div
+                  className={"h-full " + (scan.breakout_score >= 80 ? "bg-green-500" : scan.breakout_score >= 70 ? "bg-yellow-500" : "bg-orange-500")}
+                  style={{ width: scan.breakout_score + "%" }}
+                />
+              </div>
+            </div>
           </div>
-          <div className="mt-3 flex items-center gap-2"><span className={"px-3 py-1 text-sm font-medium rounded-lg " + (scan.setup_type==="FLAT_TOP"?"bg-blue-500/20 text-blue-300 border border-blue-500/30":scan.setup_type==="WEDGE"?"bg-purple-500/20 text-purple-300 border border-purple-500/30":scan.setup_type==="FLAG"?"bg-cyan-500/20 text-cyan-300 border border-cyan-500/30":scan.setup_type==="BASE"?"bg-emerald-500/20 text-emerald-300 border border-emerald-500/30":"bg-gray-500/20 text-gray-300 border border-gray-500/30")}>{scan.setup_type.replace("_"," ")}</span></div>
+          <div className="mt-3">
+            <span className={"px-3 py-1 text-sm font-medium rounded-lg " + (
+              scan.setup_type === "FLAT_TOP" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" :
+              scan.setup_type === "WEDGE" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" :
+              scan.setup_type === "FLAG" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" :
+              scan.setup_type === "BASE" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" :
+              "bg-gray-500/20 text-gray-300 border border-gray-500/30"
+            )}>
+              {scan.setup_type.replace("_", " ")}
+            </span>
+          </div>
         </div>
 
-        {/* EMA Analysis */}
         <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-zinc-400 uppercase">EMA Analysis</h3>{emaAligned&&<span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs font-medium rounded border border-green-500/30">✓ Aligned</span>}</div>
-          {[["Price vs EMA21",scan.price,scan.ema21],["EMA21 vs EMA50",scan.ema21,scan.ema50],["EMA50 vs EMA200",scan.ema50,scan.ema200]].map(([label,a,b],i)=>{const pct=((Number(a)/Number(b)-1)*100).toFixed(2);return(<div key={i} className="flex items-center justify-between py-2 border-b border-zinc-700 last:border-0"><div><p className="text-sm text-zinc-300">{label}</p><p className="text-xs text-zinc-500">{${fmt(Number(a))} vs {${fmt(Number(b))}</p></div><div className="text-right"><p className={"text-sm font-semibold "+(parseFloat(pct)>=0?"text-green-400":"text-red-400")}>{parseFloat(pct)>=0?"+":""}{pct}%</p><p className="text-xs text-zinc-500">{Number(a)>Number(b)?"✓ above":"✗ below"}</p></div></div>)})}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-zinc-400 uppercase">EMA Analysis</h3>
+            {emaAligned && <span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs font-medium rounded border border-green-500/30">Aligned</span>}
+          </div>
+          {([["Price vs EMA21", scan.price, scan.ema21], ["EMA21 vs EMA50", scan.ema21, scan.ema50], ["EMA50 vs EMA200", scan.ema50, scan.ema200]] as [string, number, number][]).map(([label, a, b], i) => {
+            const pct = ((a / b - 1) * 100).toFixed(2)
+            return (
+              <div key={i} className="flex items-center justify-between py-2 border-b border-zinc-700 last:border-0">
+                <div>
+                  <p className="text-sm text-zinc-300">{label}</p>
+                  <p className="text-xs text-zinc-500">{'$'}{fmt(a)} vs {'$'}{fmt(b)}</p>
+                </div>
+                <div className="text-right">
+                  <p className={"text-sm font-semibold " + (parseFloat(pct) >= 0 ? "text-green-400" : "text-red-400")}>
+                    {parseFloat(pct) >= 0 ? "+" : ""}{pct}%
+                  </p>
+                  <p className="text-xs text-zinc-500">{a > b ? "above" : "below"}</p>
+                </div>
+              </div>
+            )
+          })}
         </div>
 
-        {/* Volatility */}
         <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-semibold text-zinc-400 uppercase">Volatility & Volume</h3>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between"><span className="text-sm text-zinc-300">ADR (14-day)</span><span className="text-sm font-semibold text-white">{fmt(scan.adr_pct_14)}%</span></div>
-            <div className="flex items-center justify-between"><span className="text-sm text-zinc-300">Avg Volume (50-day)</span><span className="text-sm font-semibold text-white">{fmtVol(scan.avg_vol_50)}</span></div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-zinc-300">ADR (14-day)</span>
+            <span className="text-sm font-semibold text-white">{fmt(scan.adr_pct_14)}%</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-zinc-300">Avg Volume (50-day)</span>
+            <span className="text-sm font-semibold text-white">{fmtVol(scan.avg_vol_50)}</span>
           </div>
         </div>
 
-        {/* Notes */}
         {scan.notes && scan.notes.length > 0 && (
           <div className="bg-zinc-800/50 rounded-lg p-4 space-y-3">
             <h3 className="text-sm font-semibold text-zinc-400 uppercase">Pattern Notes</h3>
-            <div className="flex flex-wrap gap-2">{scan.notes.map((note,i)=><span key={i} className="px-2 py-1 bg-zinc-700 text-zinc-300 text-xs rounded border border-zinc-600">{note}</span>)}</div>
+            <div className="flex flex-wrap gap-2">
+              {scan.notes.map((note, i) => (
+                <span key={i} className="px-2 py-1 bg-zinc-700 text-zinc-300 text-xs rounded border border-zinc-600">{note}</span>
+              ))}
+            </div>
           </div>
         )}
-        <div className="text-center text-xs text-zinc-500 pt-4 border-t border-zinc-800">Scanned {new Date(scan.scanned_at).toLocaleString()}</div>
+
+        <div className="text-center text-xs text-zinc-500 pt-4 border-t border-zinc-800">
+          Scanned {new Date(scan.scanned_at).toLocaleString()}
+        </div>
       </div>
     </div>
   )
