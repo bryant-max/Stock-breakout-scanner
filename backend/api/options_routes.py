@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, date, timedelta
 
 from middleware.auth import get_current_user
-from middleware.rate_limit import limiterh
+from middleware.rate_limit import limiter
 from config import settings
 
 logger = logging.getLogger(__name__)
