@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!customer_id || !price_id || !payment_method_id || !plan)
     return res.status(400).json({ detail: "Missing required fields" });
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-04-30.basil" });
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
 
   try {
     // Set as default payment method

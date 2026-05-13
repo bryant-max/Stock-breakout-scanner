@@ -22,7 +22,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { plan } = req.body as { plan?: string };
   if (!plan || !PLAN_PRICE_IDS[plan]) return res.status(400).json({ detail: "Unknown plan: " + plan });
   const priceId = PLAN_PRICE_IDS[plan]!;
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-04-30.basil" });
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
   try {
     const existing = await stripe.customers.list({ email: user.email!, limit: 1 });
     const customer = existing.data.length > 0

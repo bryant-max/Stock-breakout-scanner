@@ -37,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: "2025-04-30.basil",
+    apiVersion: "2025-02-24.acacia",
   });
 
   const sig = req.headers["stripe-signature"] as string;
@@ -81,7 +81,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 async function handleCheckoutCompleted(
   stripe: Stripe,
-  supabase: ReturnType<typeof createClient>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
   session: Stripe.Checkout.Session
 ) {
   const userId = session.metadata?.user_id;
@@ -136,7 +137,8 @@ async function handleCheckoutCompleted(
 }
 
 async function handleSubscriptionUpdated(
-  supabase: ReturnType<typeof createClient>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
   subscription: Stripe.Subscription
 ) {
   const customerId = subscription.customer as string;
@@ -156,7 +158,8 @@ async function handleSubscriptionUpdated(
 }
 
 async function handleSubscriptionDeleted(
-  supabase: ReturnType<typeof createClient>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
   subscription: Stripe.Subscription
 ) {
   const customerId = subscription.customer as string;
