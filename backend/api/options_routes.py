@@ -18,7 +18,7 @@ from config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-POLYGON_BASE = "https://api.polygon.io"
+POLYGON_BASE = "https://api.polygon.io"  # Polygon v2/v3 REST API
 
 
 # -- Models --
