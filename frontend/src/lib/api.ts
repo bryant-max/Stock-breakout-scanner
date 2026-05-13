@@ -169,7 +169,7 @@ export async function healthCheck(): Promise<{
   polygon_api: boolean
   supabase: boolean
 }> {
-  const response = await fetch(`${API_URL}/health`)
+  const response = await fetch(`${API_URL}/api/health`)
   return response.json()
 }
 

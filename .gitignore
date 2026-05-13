@@ -1,10 +1,13 @@
 node_modules
 .env
 .env.*
+!.env.example
 frontend/.env
 frontend/.env.*
+!frontend/.env.example
 backend/.env
 backend/.env.*
+!backend/.env.example
 # Build outputs
 frontend/dist
 frontend/tsconfig.tsbuildinfo
