@@ -67,11 +67,11 @@ async def get_option_expiries(symbol: str):
                             results = data.get("results", [])
                             expiries = sorted(set(r["expiration_date"] for r in results if "expiration_date" in r))
                             return {"symbol": symbol.upper(), "expiration_dates": expiries}
-except HTTPException:
-        raise
-except Exception as e:
-        logger.error(f"Error fetching expiries for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error fetching expiries for {symbol}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/options/chain/{symbol}")
@@ -128,11 +128,11 @@ elif contract_type == "put":
                             "puts": puts,
                             "total": len(calls) + len(puts),
         }
-except HTTPException:
-        raise
-except Exception as e:
-        logger.error(f"Error fetching options chain for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error fetching options chain for {symbol}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/options/contract/{option_ticker:path}")
@@ -141,11 +141,11 @@ async def get_option_contract(option_ticker: str):
     try:
                     data = await polygon_get(f"/v3/reference/options/contracts/{option_ticker}")
                     return data
-except HTTPException:
-        raise
-except Exception as e:
-        logger.error(f"Error fetching contract {option_ticker}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error fetching contract {option_ticker}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/options/order")
@@ -166,6 +166,6 @@ async def place_options_order(
                         limit_price=order.limit_price,
                     )
                     return {"success": True, "order": result}
-except Exception as e:
-        logger.error(f"Error placing options order: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            except Exception as e:
+                logger.error(f"Error placing options order: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
