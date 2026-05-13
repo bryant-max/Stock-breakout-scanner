@@ -43,7 +43,7 @@ async def polygon_get(path: str, params: dict = None):
                             r = await client.get(url, headers=headers, params=params or {})
                             if r.status_code != 200:
                                                 raise HTTPException(status_code=r.status_code, detail=r.text)
-                                    return r.json()
+                        return r.json()
 
 
 # -- Routes --
