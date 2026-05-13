@@ -78,7 +78,6 @@ async def polygon_get(path: str, params: dict = None) -> dict:
             raise HTTPException(status_code=r.status_code, detail=r.text)
         return r.json()
 
-
 def _contract_to_row(r: dict) -> dict:
     """Flatten a Polygon options snapshot result into a compact row."""
     details = r.get("details", {})
