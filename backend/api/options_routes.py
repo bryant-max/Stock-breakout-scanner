@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, date, timedelta
 
 from middleware.auth import get_current_user
-from middleware.rate_limit import limiter
+from middleware.rate_limit import limiterh
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ async def polygon_get(path: str, params: dict = None):
                     r = await client.get(url, headers=headers, params=params or {})
                     if r.status_code != 200:
                                     raise HTTPException(status_code=r.status_code, detail=r.text)
-                                return r.json()
+                                            return r.json()
 
 
 # -- Routes --
