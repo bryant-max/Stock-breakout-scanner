@@ -447,9 +447,6 @@ export default function PortfolioPage() {
               </div>
               <OptionsChain
                 symbol={optionsSymbol}
-                accountId={accounts[0]?.id}
-                isPaper={optionsPaper}
-                onOrderPlaced={msg => console.log("Options order:", msg)}
               />
             </motion.div>
           )}
