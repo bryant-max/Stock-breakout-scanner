@@ -23,9 +23,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Stock Scanner API", description="Breakout pattern scanner with options chain and paper trading", version="2.0.0", lifespan=lifespan)
 
-allowed_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+# CORS — production origins are hardcoded so the app works without env vars on Railway.
+_PRODUCTION_ORIGINS = [
+    "https://www.orbistrading.io",
+    "https://orbistrading.io",
+]
+
+allowed_origins = _PRODUCTION_ORIGINS + [
+    origin.strip()
+    for origin in settings.CORS_ORIGINS.split(",")
+    if origin.strip() and origin.strip() not in _PRODUCTION_ORIGINS
+]
+
+# FRONTEND_URL env var adds extra origins (e.g. preview deployments).
+if settings.FRONTEND_URL and settings.FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(settings.FRONTEND_URL)
+
 if "*" in allowed_origins:
     raise RuntimeError("CORS misconfiguration: wildcard origin '*' is not allowed with allow_credentials=True.")
+
+logger.info("CORS allowed origins: %s", allowed_origins)
 
 app.add_middleware(
     CORSMiddleware,

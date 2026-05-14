@@ -48,5 +48,8 @@ pytest-asyncio==0.21.1
 # YouTube transcript fetching
 youtube-transcript-api~=0.6.0
 
+# Options chain fallback (free tier, no API key required)
+yfinance>=0.2.0
+
 # Environment variables
 python-dotenv==1.0.0
