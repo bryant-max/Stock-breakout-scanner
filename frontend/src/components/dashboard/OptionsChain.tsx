@@ -92,8 +92,8 @@ function ContractRow({
       )}>
         ${midpoint}
       </td>
-      <td className="px-3 py-2 text-white/60">{contract.volume.toLocaleString()}</td>
-      <td className="px-3 py-2 text-white/60">{contract.open_interest.toLocaleString()}</td>
+      <td className="px-3 py-2 text-white/60">{(contract.volume || 0).toLocaleString()}</td>
+      <td className="px-3 py-2 text-white/60">{(contract.open_interest || 0).toLocaleString()}</td>
       <td className="px-3 py-2 text-blue-300">{fmtPct(contract.iv)}</td>
       <td className={cn(
         "px-3 py-2",

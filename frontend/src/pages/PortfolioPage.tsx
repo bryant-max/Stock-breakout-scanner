@@ -121,7 +121,7 @@ export default function PortfolioPage() {
   return (
     <div className="min-h-screen bg-black">
       <Sidebar />
-      <div className="ml-[var(--sidebar-w,60px)] transition-[margin-left] duration-300 ease-in-out">
+      <div className="min-h-screen ml-[var(--sidebar-w,60px)] transition-[margin-left] duration-300 ease-in-out">
         <header className="fixed top-0 left-[var(--sidebar-w,60px)] right-0 z-40 border-b border-white/5 bg-neutral-950/90 backdrop-blur-xl">
           <div className="flex h-16 items-center justify-between px-8">
             <div className="flex items-center gap-3">
