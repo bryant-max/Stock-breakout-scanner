@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth"
 
 export default function Navbar() {
   const navigate = useNavigate()
-  const { user, loading } = useAuth()
+  const { user, isAdmin, loading } = useAuth()
   const isSignedIn = !loading && !!user
   const [scrolled, setScrolled] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
@@ -79,7 +79,7 @@ export default function Navbar() {
             </svg>
           </motion.div>
           <span className="font-mono text-sm font-bold tracking-tight text-white uppercase">
-            StockBreakout
+            Orbis
           </span>
         </Link>
 
@@ -124,7 +124,7 @@ export default function Navbar() {
                 transition={{ delay: 0.6 }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => navigate("/admin")}
+                onClick={() => navigate("/dashboard")}
                 className="border border-[#00ff88] bg-[#00ff88] px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-black transition-all hover:bg-transparent hover:text-[#00ff88]"
               >
                 Dashboard
@@ -205,7 +205,7 @@ export default function Navbar() {
                       )}
                     </div>
                     <Link
-                      to="/admin"
+                      to="/dashboard"
                       onClick={() => setMobileMenuOpen(false)}
                       className="border border-[#00ff88] bg-[#00ff88] px-4 py-2 font-bold text-black transition-all hover:bg-transparent hover:text-[#00ff88]"
                     >

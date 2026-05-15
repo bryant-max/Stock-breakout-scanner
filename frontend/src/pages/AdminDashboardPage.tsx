@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   Wallet, DollarSign, TrendingUp, TrendingDown, Link2,
   RefreshCw, ExternalLink, ArrowUpRight, ArrowDownRight,
-  Target, Brain, Activity,
+  Target, Brain, Activity, X,
 } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -26,6 +26,9 @@ import { cn } from "@/lib/utils"
 type ConnectionState = "loading" | "unregistered" | "no_accounts" | "connected"
 
 export default function AdminDashboardPage() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [showSuccessBanner, setShowSuccessBanner] = useState(() => searchParams.get("checkout") === "success")
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading")
   const [accounts, setAccounts] = useState<SnapTradeAccount[]>([])
   const [holdings, setHoldings] = useState<Array<{ account: SnapTradeAccount; holdings: SnapTradeHolding[] }>>([])
@@ -126,8 +129,8 @@ export default function AdminDashboardPage() {
     <div className="min-h-screen bg-black">
       <Sidebar />
 
-      <div className="ml-[72px]">
-        <header className="fixed top-0 left-[72px] right-0 z-50 border-b border-white/5 bg-linear-to-r from-neutral-950 via-neutral-900 to-neutral-950 backdrop-blur-xl">
+      <div className="min-h-screen ml-[var(--sidebar-w,60px)] transition-[margin-left] duration-300 ease-in-out">
+        <header className="fixed top-0 left-[var(--sidebar-w,60px)] transition-[left] duration-300 ease-in-out right-0 z-50 border-b border-white/5 bg-linear-to-r from-neutral-950 via-neutral-900 to-neutral-950 backdrop-blur-xl">
           <div className="flex h-16 items-center justify-between px-8">
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-linear-to-br from-emerald-500/20 to-teal-500/20 ring-1 ring-white/10">
@@ -161,6 +164,30 @@ export default function AdminDashboardPage() {
         </header>
 
         <main className="pt-24 p-8 space-y-6">
+          {showSuccessBanner && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center justify-between gap-4 border border-[#00ff88]/40 bg-[#00ff88]/10 px-5 py-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-[#00ff88] animate-pulse" />
+                <div>
+                  <p className="font-mono text-sm font-bold text-[#00ff88]">Welcome to Orbis — your free trial is active.</p>
+                  <p className="font-mono text-xs text-[#00ff88]/70 mt-0.5">Your 7-day trial has started. No charge until the trial ends.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSuccessBanner(false)
+                  navigate("/dashboard", { replace: true })
+                }}
+                className="shrink-0 text-[#00ff88]/60 hover:text-[#00ff88] transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
           {error && (
             <Card className="bg-red-500/10 border-red-500/30 p-4">
               <p className="text-red-400 text-sm">{error}</p>
@@ -358,7 +385,7 @@ export default function AdminDashboardPage() {
                   <div className="p-2 rounded-lg bg-cyan-500/15 group-hover:bg-cyan-500/25 transition-colors">
                     <Target className="h-5 w-5 text-cyan-400" />
                   </div>
-                  <h3 className="font-semibold text-white">Stock Scanner</h3>
+                  <h3 className="font-semibold text-white">Scanner</h3>
                 </div>
                 <p className="text-sm text-white/50">Scan for breakout setups with EMA analysis and quality scores.</p>
               </Card>

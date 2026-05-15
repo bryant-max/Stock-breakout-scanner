@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from "react-router-dom"
-import React, { Suspense } from "react"
+import React, { Suspense, useEffect } from "react"
 import Navbar from "@/components/landing/Navbar"
+import { SeanPopup } from "@/components/dashboard/SeanPopup"
 import Hero from "@/components/landing/Hero"
 import FeatureCards from "@/components/landing/FeatureCards"
 import SplitSection from "@/components/landing/SplitSection"
@@ -8,12 +9,14 @@ import FAQSection from "@/components/landing/faq-section"
 import PricingPreview from "@/components/landing/PricingPreview"
 import Footer from "@/components/landing/Footer"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
+import { AdminRoute } from "@/components/auth/AdminRoute"
 
 // Pages
 import Login from "@/pages/login"
 import Signup from "@/pages/signup"
 import Demo from "@/pages/DemoScanPage"
 const AdminDashboardPageLazy = React.lazy(() => import("@/pages/AdminDashboardPage"))
+const AdminPanelPageLazy = React.lazy(() => import("@/pages/AdminPanelPage"))
 const SettingsPageLazy = React.lazy(() => import("@/pages/SettingsPage"))
 const ScannerPageLazy = React.lazy(() => import("@/pages/ScannerPage"))
 const AiInsightsPageLazy = React.lazy(() => import("@/pages/AiInsightsPage"))
@@ -22,11 +25,22 @@ const AnalyticsPageLazy = React.lazy(() => import("@/pages/AnalyticsPage"))
 const StockMomentumPageLazy = React.lazy(() => import("@/pages/StockMomentumPage"))
 const PortfolioPageLazy = React.lazy(() => import("@/pages/PortfolioPage"))
 const AiTrainingPageLazy = React.lazy(() => import("@/pages/AiTrainingPage"))
+const ContactPageLazy = React.lazy(() => import("@/pages/ContactPage"))
+const PricingPageLazy = React.lazy(() => import("@/pages/PricingPage"))
+const TermsPageLazy = React.lazy(() => import("@/pages/TermsPage"))
+const PrivacyPageLazy = React.lazy(() => import("@/pages/PrivacyPage"))
+const VerifyEmailPageLazy = React.lazy(() => import("@/pages/VerifyEmailPage"))
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
 
 function AppContent() {
   const location = useLocation()
 
-  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup"
+  const isAuthPage = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/contact" || location.pathname === "/pricing" || location.pathname === "/verify-email"
   const isDemoPage = location.pathname === "/demo"
   const isAppShellPage = [
     "/admin",
@@ -44,6 +58,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <ScrollToTop />
       {/* Marketing navbar only on landing/marketing pages */}
       {!isAuthPage && !isAppShellPage && <Navbar />}
 
@@ -64,7 +79,7 @@ function AppContent() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/demo" element={<Demo />} />
         <Route path="/dashboard" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><AdminDashboardPageLazy /></Suspense></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><AdminDashboardPageLazy /></Suspense></ProtectedRoute>} />
+        <Route path="/admin" element={<AdminRoute><Suspense fallback={<div className="p-6">Loading…</div>}><AdminPanelPageLazy /></Suspense></AdminRoute>} />
         <Route path="/ai-insights" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><AiInsightsPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/scanner" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><ScannerPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/stock-momentum" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><StockMomentumPageLazy /></Suspense></ProtectedRoute>} />
@@ -73,7 +88,15 @@ function AppContent() {
         <Route path="/portfolio" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><PortfolioPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/ai-training" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><AiTrainingPageLazy /></Suspense></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Suspense fallback={<div className="p-6">Loading…</div>}><SettingsPageLazy /></Suspense></ProtectedRoute>} />
+        <Route path="/contact" element={<Suspense fallback={<div className="p-6">Loading…</div>}><ContactPageLazy /></Suspense>} />
+        <Route path="/pricing" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PricingPageLazy /></Suspense>} />
+        <Route path="/terms" element={<Suspense fallback={<div className="p-6">Loading…</div>}><TermsPageLazy /></Suspense>} />
+        <Route path="/privacy" element={<Suspense fallback={<div className="p-6">Loading…</div>}><PrivacyPageLazy /></Suspense>} />
+        <Route path="/verify-email" element={<Suspense fallback={<div className="p-6">Loading…</div>}><VerifyEmailPageLazy /></Suspense>} />
       </Routes>
+
+      {/* Sean AI popup on all app shell pages except /ai-insights (full page there) */}
+      {isAppShellPage && !location.pathname.startsWith("/ai-insights") && <SeanPopup />}
 
       {/* Footer only on the main marketing page */}
       {!isAuthPage && !isDemoPage && !isAppShellPage && <Footer />}

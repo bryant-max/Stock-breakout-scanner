@@ -45,12 +45,13 @@ CREATE POLICY "Admins can view all profiles"
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.profiles (id, email, full_name, avatar_url)
+    INSERT INTO public.profiles (id, email, full_name, avatar_url, phone)
     VALUES (
         NEW.id,
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
-        COALESCE(NEW.raw_user_meta_data->>'avatar_url', '')
+        COALESCE(NEW.raw_user_meta_data->>'avatar_url', ''),
+        NEW.raw_user_meta_data->>'phone'
     );
     RETURN NEW;
 END;
@@ -728,6 +729,23 @@ CREATE POLICY "Service role can manage subscriptions"
 
 
 -- ============================================================
+-- 18. AI KNOWLEDGE BASE (admin-managed training content)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.ai_knowledge_base (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    content TEXT NOT NULL,
+    source_label TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.ai_knowledge_base ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role can manage knowledge base"
+    ON public.ai_knowledge_base FOR ALL
+    USING (auth.jwt() ->> 'role' = 'service_role');
+
+
+-- ============================================================
 -- DEFERRED FOREIGN KEYS (cross-table references)
 -- ============================================================
 ALTER TABLE public.scan_results
@@ -835,6 +853,7 @@ GRANT ALL ON public.trade_setup_links TO service_role;
 GRANT ALL ON public.user_notes TO service_role;
 GRANT ALL ON public.filter_presets TO service_role;
 GRANT ALL ON public.subscriptions TO service_role;
+GRANT ALL ON public.ai_knowledge_base TO service_role;
 
 -- Sequences
 GRANT USAGE, SELECT ON SEQUENCE watchlist_items_id_seq TO authenticated;

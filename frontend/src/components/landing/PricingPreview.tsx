@@ -1,52 +1,45 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { PRICING_PLANS, TRIAL_DAYS, type PlanId } from "@/lib/pricing"
+import { useAuth } from "@/hooks/useAuth"
+import { supabase } from "@/lib/supabase"
 
-const plans = [
-  {
-    name: "Core",
-    price: "0",
-    period: "forever",
-    description: "Start free and explore the platform.",
-    buttonText: "Start Free",
-    features: [
-      { text: "Charting / Technicals", included: true },
-      { text: "Unlimited Custom Indicators", included: false },
-      { text: "Access To Explore", included: true },
-      { text: "Paper Trading", included: true },
-      { text: "Email Alerts", included: true },
-      { text: "Full Alt Data", included: false },
-      { text: "Broker Connections", included: false },
-    ],
-  },
-  {
-    name: "Premium",
-    price: "50",
-    period: "month",
-    description: "For serious traders who want full coverage.",
-    buttonText: "Upgrade",
-    isPopular: true,
-    features: [
-      { text: "Charting / Technicals", included: true },
-      { text: "Unlimited Custom Indicators", included: true },
-      { text: "Access To Explore", included: true },
-      { text: "Paper Trading", included: true },
-      { text: "Email Alerts", included: true },
-      { text: "Full Alt Data", included: true },
-      { text: "Broker Connections", included: true },
-      { text: "Unlimited Research Prompts", included: true },
-      { text: "Unlimited Backtesting", included: true },
-      { text: "Unlimited Saved Strategies", included: true },
-      { text: "Deploy Up To 10 Strategies", included: true },
-      { text: "SMS Alerts", included: true },
-    ],
-  },
-]
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 export default function PricingSection() {
-  const [isYearly] = useState(false)
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null)
+
+  const handleSubscribe = async (planId: PlanId) => {
+    if (!user) {
+      navigate(`/signup?plan=${planId}`)
+      return
+    }
+    setLoadingPlan(planId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API_URL}/api/subscription/checkout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ plan: planId }),
+      })
+      if (!res.ok) throw new Error("Checkout failed")
+      const { checkout_url } = await res.json()
+      window.location.href = checkout_url
+    } catch (err) {
+      console.error("Stripe checkout error:", err)
+    } finally {
+      setLoadingPlan(null)
+    }
+  }
 
   return (
     <section id="pricing" className="relative bg-black py-20 sm:py-32">
-      {/* Background Elements */}
+      {/* Background grid */}
       <div className="absolute inset-0">
         <div
           className="absolute inset-0 opacity-10"
@@ -62,47 +55,39 @@ export default function PricingSection() {
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
-        {/* Section Header */}
+        {/* Header */}
         <div className="mb-16 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="h-px w-8 bg-[#00ff88]" />
-            <span className="font-mono text-xs uppercase tracking-wider text-[#00ff88]">
-              Plans & Pricing
-            </span>
+            <span className="font-mono text-xs uppercase tracking-wider text-[#00ff88]">Plans & Pricing</span>
             <div className="h-px w-8 bg-[#00ff88]" />
           </div>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white leading-tight mb-6">
             Built for every trader.
           </h2>
           <p className="mx-auto max-w-xl font-mono text-sm text-white/60">
-            Start free and scale when you{"'"}re ready.
+            Start free and scale when you&apos;re ready.
           </p>
-
-          {/* Trial Badge */}
           <div className="mt-6 inline-flex items-center gap-2 border border-[#00ff88]/30 bg-[#00ff88]/10 px-4 py-2">
             <div className="h-2 w-2 bg-[#00ff88] animate-pulse" />
-            <span className="font-mono text-xs text-[#00ff88]">14-day free trial</span>
+            <span className="font-mono text-xs text-[#00ff88]">
+              {TRIAL_DAYS}-day free trial — card required, charged on day 8
+            </span>
           </div>
         </div>
 
-        {/* Pricing Cards */}
+        {/* Cards */}
         <div className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto">
-          {plans.map((plan, index) => (
+          {PRICING_PLANS.map((plan) => (
             <div
-              key={index}
+              key={plan.id}
               className={`relative border ${
-                plan.isPopular 
-                  ? "border-[#00ff88] bg-[#00ff88]/5" 
-                  : "border-[#222] bg-[#0a0a0a]"
+                plan.isPopular ? "border-[#00ff88] bg-[#00ff88]/5" : "border-[#222] bg-[#0a0a0a]"
               }`}
             >
-              {/* Popular Badge */}
-              {plan.isPopular && (
-                <div className="absolute -top-px left-0 right-0 h-px bg-[#00ff88]" />
-              )}
+              {plan.isPopular && <div className="absolute -top-px left-0 right-0 h-px bg-[#00ff88]" />}
 
               <div className="p-6 sm:p-8">
-                {/* Plan Header */}
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-mono text-lg font-bold text-white">{plan.name}</h3>
@@ -115,28 +100,26 @@ export default function PricingSection() {
                   <p className="font-mono text-xs text-white/60">{plan.description}</p>
                 </div>
 
-                {/* Price */}
-                <div className="mb-8">
+                <div className="mb-2">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold text-white">
-                      ${isYearly ? Math.round(parseInt(plan.price) * 0.8) : plan.price}
-                    </span>
+                    <span className="text-4xl font-bold text-white">${plan.price}</span>
                     <span className="font-mono text-sm text-white/40">/ {plan.period}</span>
                   </div>
+                  <p className="font-mono text-xs text-[#00ff88] mt-1">{TRIAL_DAYS}-day trial, then billed monthly</p>
                 </div>
 
-                {/* CTA Button */}
                 <button
-                  className={`w-full py-4 font-mono text-sm font-bold uppercase tracking-wider transition-all ${
+                  onClick={() => handleSubscribe(plan.id)}
+                  disabled={loadingPlan === plan.id}
+                  className={`mt-6 w-full py-4 font-mono text-sm font-bold uppercase tracking-wider transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                     plan.isPopular
                       ? "border border-[#00ff88] bg-[#00ff88] text-black hover:bg-transparent hover:text-[#00ff88]"
                       : "border border-white/20 text-white hover:border-[#00ff88] hover:text-[#00ff88]"
                   }`}
                 >
-                  {plan.buttonText}
+                  {loadingPlan === plan.id ? "Redirecting…" : plan.buttonText}
                 </button>
 
-                {/* Features */}
                 <div className="mt-8 space-y-3">
                   {plan.features.map((feature, i) => (
                     <div key={i} className="flex items-center gap-3">
@@ -153,7 +136,7 @@ export default function PricingSection() {
                           </svg>
                         </div>
                       )}
-                      <span className={`font-mono text-xs ${feature.included ? 'text-white' : 'text-white/40'}`}>
+                      <span className={`font-mono text-xs ${feature.included ? "text-white" : "text-white/40"}`}>
                         {feature.text}
                       </span>
                     </div>
@@ -164,17 +147,21 @@ export default function PricingSection() {
           ))}
         </div>
 
-        {/* Brokerages Section */}
+        <div className="mt-10 text-center">
+          <button
+            onClick={() => navigate("/pricing")}
+            className="font-mono text-xs uppercase tracking-wider text-white/40 hover:text-[#00ff88] transition-colors underline underline-offset-4"
+          >
+            View full pricing details →
+          </button>
+        </div>
+
+        {/* Brokerages */}
         <div className="mt-20">
           <div className="text-center mb-8">
-            <h3 className="font-mono text-xs uppercase tracking-wider text-white/40 mb-2">
-              Brokerage Connection
-            </h3>
-            <p className="text-xl font-bold text-white">
-              Trade with your preferred brokerage.
-            </p>
+            <h3 className="font-mono text-xs uppercase tracking-wider text-white/40 mb-2">Brokerage Connection</h3>
+            <p className="text-xl font-bold text-white">Trade with your preferred brokerage.</p>
           </div>
-
           <div className="flex flex-wrap items-center justify-center gap-6">
             {["Alpaca", "Coinbase", "Webull", "Public", "Tastytrade", "Tradier", "E*TRADE", "Charles Schwab"].map((broker) => (
               <div

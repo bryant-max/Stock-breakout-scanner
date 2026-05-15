@@ -1,10 +1,13 @@
 node_modules
 .env
 .env.*
+!.env.example
 frontend/.env
 frontend/.env.*
+!frontend/.env.example
 backend/.env
 backend/.env.*
+!backend/.env.example
 # Build outputs
 frontend/dist
 frontend/tsconfig.tsbuildinfo
@@ -16,3 +19,6 @@ frontend/tsconfig.tsbuildinfo
 backend/.venv/
 __pycache__/
 *.pyc
+# VAPID keys
+backend/vapid_private.pem
+backend/vapid_public.pem

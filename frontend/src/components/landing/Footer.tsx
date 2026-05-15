@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom"
+
 export default function Footer() {
   return (
     <footer className="relative bg-black border-t border-[#222]">
@@ -12,7 +14,7 @@ export default function Footer() {
           </div>
 
           <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-tight max-w-4xl">
-            StockBreakout aims to bridge the gap between retail trading and{" "}
+            Orbis aims to bridge the gap between retail trading and{" "}
             <span className="text-[#00ff88]">institutional-grade quantitative analysis.</span>
           </h2>
 
@@ -77,7 +79,7 @@ export default function Footer() {
               </svg>
             </div>
             <span className="font-mono text-sm font-bold text-white uppercase">
-              StockBreakout
+              Orbis
             </span>
           </div>
 
@@ -87,18 +89,19 @@ export default function Footer() {
               <span className="text-white/20">Resources</span>
               <a href="#" className="hover:text-[#00ff88] transition-colors">Documentation</a>
               <a href="#" className="hover:text-[#00ff88] transition-colors">Help Center</a>
+              <Link to="/contact" className="hover:text-[#00ff88] transition-colors">Contact</Link>
             </div>
             <div className="h-4 w-px bg-[#222] hidden md:block" />
             <div className="flex items-center gap-4">
               <span className="text-white/20">Legal</span>
-              <a href="#" className="hover:text-[#00ff88] transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-[#00ff88] transition-colors">Terms of Service</a>
+              <Link to="/privacy" className="hover:text-[#00ff88] transition-colors">Privacy Policy</Link>
+              <Link to="/terms" className="hover:text-[#00ff88] transition-colors">Terms of Service</Link>
             </div>
           </div>
 
           {/* Copyright */}
           <p className="font-mono text-xs text-white/30">
-            © 2026 StockBreakout. All rights reserved.
+            © 2026 Orbis. All rights reserved.
           </p>
         </div>
       </div>

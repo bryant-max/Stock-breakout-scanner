@@ -1,7 +1,7 @@
 {
   "name": "stock-scanner",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,10 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.0",
+    "@stripe/react-stripe-js": "^6.3.0",
+    "@stripe/stripe-js": "^9.4.0",
+        "stripe": "^17.7.0",
+        "@vercel/node": "^5.0.0",
     "@supabase/supabase-js": "^2.88.0",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",

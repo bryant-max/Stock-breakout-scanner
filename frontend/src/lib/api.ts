@@ -1,9 +1,6 @@
 // API client for backend communication
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
-if (import.meta.env.PROD && !import.meta.env.VITE_API_URL) {
-  throw new Error("VITE_API_URL is not configured for production build")
-}
 const API_BASE = `${API_URL}/api/v1`
 
 // Types matching backend models
@@ -172,7 +169,7 @@ export async function healthCheck(): Promise<{
   polygon_api: boolean
   supabase: boolean
 }> {
-  const response = await fetch(`${API_URL}/health`)
+  const response = await fetch(`${API_URL}/api/health`)
   return response.json()
 }
 
@@ -719,6 +716,108 @@ export async function snaptradeSearchSymbols(query: string): Promise<{ symbols: 
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to search symbols")
+  }
+  return response.json()
+}
+
+// ============================================================
+// Options API
+// ============================================================
+
+export interface OptionsContract {
+  ticker: string
+  contract_type: "call" | "put"
+  strike: number | null
+  expiration: string
+  bid: number | null
+  ask: number | null
+  last: number | null
+  volume: number
+  open_interest: number
+  iv: number | null
+  delta: number | null
+  gamma: number | null
+  theta: number | null
+  vega: number | null
+}
+
+export interface OptionsChainResponse {
+  symbol: string
+  calls: OptionsContract[]
+  puts: OptionsContract[]
+  expirations: string[]
+  total: number
+}
+
+export interface PaperTradeCreate {
+  symbol: string
+  contract_ticker: string
+  contract_type: "call" | "put"
+  strike_price: number
+  expiration_date: string
+  action: "buy" | "sell"
+  quantity: number
+  price_per_contract: number
+  notes?: string
+}
+
+/**
+ * Fetch live options chain from Polygon via the backend.
+ */
+export async function getOptionsChain(
+  symbol: string,
+  opts: {
+    expiration_date?: string
+    contract_type?: "call" | "put"
+    limit?: number
+  } = {}
+): Promise<OptionsChainResponse> {
+  const headers = await getAuthHeaders()
+  const params = new URLSearchParams()
+  if (opts.expiration_date) params.set("expiration_date", opts.expiration_date)
+  if (opts.contract_type) params.set("contract_type", opts.contract_type)
+  if (opts.limit) params.set("limit", String(opts.limit))
+
+  const response = await fetch(
+    `${API_URL}/api/options/chain/${symbol}?${params}`,
+    { headers }
+  )
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.detail || `Failed to fetch options chain for ${symbol}`)
+  }
+  return response.json()
+}
+
+/**
+ * Log a simulated (paper) options trade.
+ */
+export async function placePaperTrade(body: PaperTradeCreate): Promise<Record<string, unknown>> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(`${API_URL}/api/options/paper-trade`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.detail || "Failed to place paper trade")
+  }
+  return response.json()
+}
+
+/**
+ * Get the current user's paper trade history.
+ */
+export async function getPaperTrades(limit = 50): Promise<{ trades: Record<string, unknown>[] }> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(
+    `${API_URL}/api/options/paper-trades?limit=${limit}`,
+    { headers }
+  )
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.detail || "Failed to fetch paper trades")
   }
   return response.json()
 }

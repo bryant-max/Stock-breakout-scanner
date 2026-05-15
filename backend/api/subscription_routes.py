@@ -1,10 +1,9 @@
 """
 Subscription and payment API endpoints.
-Handles Stripe integration for premium features.
+Handles Stripe integration for Core and Premium plans with 7-day free trial.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 import stripe
-import os
 import logging
 from datetime import datetime, timezone
 
@@ -17,238 +16,293 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Configure Stripe
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+PLAN_PRICE_IDS: dict[str, str | None] = {
+    "core": settings.STRIPE_CORE_PRICE_ID,
+    "premium": settings.STRIPE_PREMIUM_PRICE_ID,
+}
+
+TRIAL_PERIOD_DAYS = 7
 
 
 @router.get("/", response_model=Subscription)
 async def get_subscription(user: dict = Depends(get_current_user)):
-    """
-    Get user's subscription information.
-    Returns free tier if no subscription exists.
-    """
+    """Get user's current subscription, defaulting to free if none exists."""
     try:
-        user_id = user["user_id"]
-
-        query = supabase.table("subscriptions").select()
-        query = query.eq("user_id", user_id)
-
-        results = await query.execute()
-
+        results = await supabase.table("subscriptions").select().eq("user_id", user["user_id"]).execute()
         if results:
             return results[0]
-        else:
-            # Return default free subscription
-            return Subscription(
-                user_id=user_id,
-                plan="free",
-                status="active",
-                created_at=datetime.now(timezone.utc)
-            )
-
+        return Subscription(
+            user_id=user["user_id"],
+            plan="free",
+            status="active",
+            created_at=datetime.now(timezone.utc),
+        )
     except Exception as e:
         logger.error(f"Fetch subscription failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch subscription"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch subscription")
 
 
 @router.post("/checkout")
-async def create_checkout_session(user: dict = Depends(get_current_user)):
+async def create_checkout_session(request: Request, user: dict = Depends(get_current_user)):
     """
-    Create a Stripe checkout session for subscription.
-    Returns checkout URL for frontend to redirect to.
+    Create a Stripe Checkout session for Core or Premium plan.
+    Accepts JSON body: { "plan": "core" | "premium" }
+    Returns { "checkout_url": "..." } for frontend redirect.
     """
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Stripe not configured.")
+
+    body = await request.json()
+    plan = body.get("plan", "core")
+
+    if plan not in PLAN_PRICE_IDS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown plan: {plan}")
+
+    price_id = PLAN_PRICE_IDS[plan]
+    if not price_id:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=f"Price ID for plan '{plan}' not configured.")
+
     try:
-        if not settings.STRIPE_SECRET_KEY or not settings.STRIPE_PRICE_ID:
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="Stripe not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_ID."
-            )
-
-        user_id = user["user_id"]
-        email = user["email"]
-
-        # Create Stripe checkout session
-        checkout_session = stripe.checkout.Session.create(
-            customer_email=email,
-            line_items=[
-                {
-                    "price": settings.STRIPE_PRICE_ID,
-                    "quantity": 1,
-                },
-            ],
+        frontend_url = settings.FRONTEND_URL.rstrip("/")
+        session = stripe.checkout.Session.create(
+            customer_email=user["email"],
+            line_items=[{"price": price_id, "quantity": 1}],
             mode="subscription",
-            success_url=f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/subscription/cancel",
-            metadata={
-                "user_id": user_id
-            }
+            payment_method_collection="always",
+            subscription_data={
+                "trial_period_days": TRIAL_PERIOD_DAYS,
+                "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
+            },
+            success_url=f"{frontend_url}/verify-email?checkout=success&plan={plan}",
+            cancel_url=f"{frontend_url}/pricing?checkout=cancelled",
+            metadata={"user_id": user["user_id"], "plan": plan},
         )
+        return {"checkout_url": session.url, "session_id": session.id}
 
-        return {
-            "checkout_url": checkout_session.url,
-            "session_id": checkout_session.id
-        }
-
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe checkout error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Payment provider error"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment provider error")
     except Exception as e:
         logger.error(f"Create checkout session failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create checkout session"
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create checkout session")
+
+
+@router.post("/create-checkout-session")
+async def create_embedded_checkout_session(request: Request, user: dict = Depends(get_current_user)):
+    """
+    Create a Stripe Embedded Checkout session.
+    Returns { client_secret } for frontend rendering via @stripe/react-stripe-js.
+    """
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Stripe not configured.")
+
+    body = await request.json()
+    plan = body.get("plan", "core")
+
+    if plan not in PLAN_PRICE_IDS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown plan: {plan}")
+
+    price_id = PLAN_PRICE_IDS[plan]
+    if not price_id:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=f"Price ID for plan '{plan}' not configured.")
+
+    try:
+        frontend_url = settings.FRONTEND_URL.rstrip("/")
+        session = stripe.checkout.Session.create(
+            customer_email=user["email"],
+            line_items=[{"price": price_id, "quantity": 1}],
+            mode="subscription",
+            ui_mode="embedded",
+            payment_method_collection="always",
+            subscription_data={
+                "trial_period_days": TRIAL_PERIOD_DAYS,
+                "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
+            },
+            return_url=f"{frontend_url}/verify-email?checkout=success&plan={plan}&session_id={{CHECKOUT_SESSION_ID}}",
+            metadata={"user_id": user["user_id"], "plan": plan},
         )
+        return {"client_secret": session.client_secret}
+
+    except stripe.StripeError as e:
+        logger.error(f"Stripe embedded checkout error: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment provider error")
+    except Exception as e:
+        logger.error(f"Create embedded checkout session failed: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create checkout session")
 
 
 @router.post("/portal")
 async def create_portal_session(user: dict = Depends(get_current_user)):
-    """
-    Create Stripe customer portal session.
-    Allows users to manage their subscription.
-    """
+    """Create Stripe customer portal session for subscription management."""
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Stripe not configured.")
+
     try:
-        if not settings.STRIPE_SECRET_KEY:
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="Stripe not configured."
-            )
-
-        user_id = user["user_id"]
-
-        # Get subscription from database
-        query = supabase.table("subscriptions").select()
-        query = query.eq("user_id", user_id)
-        results = await query.execute()
-
+        results = await supabase.table("subscriptions").select().eq("user_id", user["user_id"]).execute()
         if not results or not results[0].get("stripe_customer_id"):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No active subscription found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active subscription found")
 
-        customer_id = results[0]["stripe_customer_id"]
-
-        # Create portal session
-        portal_session = stripe.billing_portal.Session.create(
-            customer=customer_id,
-            return_url=f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/settings"
+        portal = stripe.billing_portal.Session.create(
+            customer=results[0]["stripe_customer_id"],
+            return_url=f"{settings.FRONTEND_URL.rstrip('/')}/settings",
         )
+        return {"portal_url": portal.url}
 
-        return {
-            "portal_url": portal_session.url
-        }
-
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe portal error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Payment provider error"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment provider error")
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Create portal session failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create portal session"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create portal session")
 
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     """
     Handle Stripe webhook events.
-    Updates subscription status based on Stripe events.
+    Listens for: checkout.session.completed, customer.subscription.updated,
+    customer.subscription.deleted
+    Configure this URL in Stripe Dashboard: <your-api-url>/api/subscription/webhook
     """
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Stripe webhook secret not configured")
+
+    signature = request.headers.get("stripe-signature")
+    if not signature:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing stripe-signature header")
+
+    payload = await request.body()
+
     try:
-        if not settings.STRIPE_WEBHOOK_SECRET:
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="Stripe webhook secret not configured"
-            )
+        event = stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
+    except stripe.SignatureVerificationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid webhook signature")
 
-        # Get webhook signature
-        signature = request.headers.get("stripe-signature")
-        if not signature:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing stripe-signature header"
-            )
+    event_type = event["type"]
+    logger.info(f"Stripe webhook received: {event_type}")
 
-        # Get raw body
-        payload = await request.body()
-
-        # Verify webhook signature
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, signature, settings.STRIPE_WEBHOOK_SECRET
-            )
-        except stripe.error.SignatureVerificationError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid signature"
-            )
-
-        # Handle different event types
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            await handle_checkout_completed(session)
-
-        elif event["type"] == "customer.subscription.updated":
-            subscription = event["data"]["object"]
-            await handle_subscription_updated(subscription)
-
-        elif event["type"] == "customer.subscription.deleted":
-            subscription = event["data"]["object"]
-            await handle_subscription_deleted(subscription)
-
-        return {"status": "success"}
-
-    except HTTPException:
-        raise
+    try:
+        if event_type == "checkout.session.completed":
+            await _handle_checkout_completed(event["data"]["object"])
+        elif event_type == "customer.subscription.updated":
+            await _handle_subscription_updated(event["data"]["object"])
+        elif event_type == "customer.subscription.deleted":
+            await _handle_subscription_deleted(event["data"]["object"])
     except Exception as e:
-        logger.error(f"Stripe webhook error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Webhook processing failed"
-        )
+        logger.error(f"Webhook handler error for {event_type}: {e}", exc_info=True)
+        # Return 200 to acknowledge receipt — Stripe will not retry on 2xx
+        return {"status": "error_logged", "event": event_type}
+
+    return {"status": "success"}
 
 
-async def handle_checkout_completed(session: dict):
-    """Handle successful checkout."""
-    user_id = session["metadata"].get("user_id")
+# ── Private webhook handlers ────────────────────────────────────────────────
+
+def _stripe_plan_from_subscription(subscription: dict) -> str:
+    """Derive plan name from Stripe subscription price ID."""
+    try:
+        price_id = subscription["items"]["data"][0]["price"]["id"]
+        if price_id == settings.STRIPE_PREMIUM_PRICE_ID:
+            return "premium"
+        if price_id == settings.STRIPE_CORE_PRICE_ID:
+            return "core"
+    except (KeyError, IndexError):
+        pass
+    return "core"
+
+
+async def _handle_checkout_completed(session: dict):
+    """Activate subscription after successful Stripe Checkout."""
+    user_id = session.get("metadata", {}).get("user_id")
+    plan = session.get("metadata", {}).get("plan", "core")
     if not user_id:
+        logger.warning("checkout.session.completed missing user_id in metadata")
         return
 
-    # Create subscription record
     subscription_data = {
         "user_id": user_id,
-        "plan": "premium",
-        "status": "active",
-        "stripe_customer_id": session["customer"],
-        "stripe_subscription_id": session["subscription"],
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "plan": plan,
+        "status": "trialing" if session.get("subscription") else "active",
+        "stripe_customer_id": session.get("customer"),
+        "stripe_subscription_id": session.get("subscription"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Insert or update subscription
-    await supabase.table("subscriptions").insert([subscription_data]).execute()
+    # Upsert: try update first, insert if not exists
+    existing = await supabase.table("subscriptions").select("user_id").eq("user_id", user_id).execute()
+    if existing:
+        await supabase.table("subscriptions").update(subscription_data).eq("user_id", user_id).execute()
+    else:
+        subscription_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        await supabase.table("subscriptions").insert([subscription_data]).execute()
+
+    logger.info(f"Subscription activated: user={user_id} plan={plan}")
+
+    # $1 auth+void to verify card is real — cancelled immediately, no charge
+    try:
+        customer_id = session.get("customer")
+        if customer_id:
+            payment_methods = stripe.PaymentMethod.list(customer=customer_id, type="card")
+            if payment_methods.data:
+                pm = payment_methods.data[0]
+                pi = stripe.PaymentIntent.create(
+                    amount=100,
+                    currency="usd",
+                    customer=customer_id,
+                    payment_method=pm.id,
+                    capture_method="manual",
+                    confirm=True,
+                    description="Card verification hold — voided immediately",
+                )
+                stripe.PaymentIntent.cancel(pi.id)
+                logger.info(f"$1 auth/void completed: user={user_id}")
+    except Exception as e:
+        logger.warning(f"$1 auth/void failed (non-critical): {e}")
 
 
-async def handle_subscription_updated(subscription: dict):
-    """Handle subscription update."""
-    # Update subscription status in database
-    # Note: Requires UPDATE implementation
-    pass
+async def _handle_subscription_updated(subscription: dict):
+    """Sync plan and status when Stripe subscription changes."""
+    customer_id = subscription.get("customer")
+    if not customer_id:
+        return
+
+    plan = _stripe_plan_from_subscription(subscription)
+    stripe_status = subscription.get("status", "active")
+    # Map Stripe statuses to our internal ones
+    status_map = {
+        "active": "active",
+        "trialing": "trialing",
+        "past_due": "past_due",
+        "canceled": "canceled",
+        "unpaid": "past_due",
+        "paused": "active",
+    }
+    internal_status = status_map.get(stripe_status, stripe_status)
+
+    await supabase.table("subscriptions").update({
+        "plan": plan,
+        "status": internal_status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("stripe_customer_id", customer_id).execute()
+
+    logger.info(f"Subscription updated: customer={customer_id} plan={plan} status={internal_status}")
 
 
-async def handle_subscription_deleted(subscription: dict):
-    """Handle subscription cancellation."""
-    # Update subscription status to canceled
-    # Note: Requires UPDATE implementation
-    pass
+async def _handle_subscription_deleted(subscription: dict):
+    """Downgrade user to free when subscription is cancelled."""
+    customer_id = subscription.get("customer")
+    if not customer_id:
+        return
+
+    await supabase.table("subscriptions").update({
+        "plan": "free",
+        "status": "canceled",
+        "stripe_subscription_id": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("stripe_customer_id", customer_id).execute()
+
+    logger.info(f"Subscription cancelled: customer={customer_id}")

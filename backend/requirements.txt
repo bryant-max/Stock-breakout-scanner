@@ -36,12 +36,20 @@ slowapi==0.1.9
 # Payment Processing
 stripe==7.8.0
 
+# Notifications
+resend~=2.0.0
+pywebpush~=2.0.0
+twilio~=9.0.0
+
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
 # YouTube transcript fetching
 youtube-transcript-api~=0.6.0
+
+# Options chain fallback (free tier, no API key required)
+yfinance>=0.2.0
 
 # Environment variables
 python-dotenv==1.0.0
