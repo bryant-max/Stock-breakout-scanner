@@ -10,6 +10,8 @@ from typing import Literal, Optional
 import asyncio
 import httpx
 import logging
+import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 
 from middleware.auth import get_current_user
@@ -20,6 +22,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 POLYGON_BASE = "https://api.polygon.io"
+
+# ── yfinance in-memory cache (avoids hammering Yahoo Finance on every request) ──
+_YF_CACHE: dict = {}
+_YF_CACHE_TTL = 300          # 5 minutes
+_YF_CACHE_LOCK = threading.Lock()
+
+def _cache_get(key: str):
+    with _YF_CACHE_LOCK:
+        entry = _YF_CACHE.get(key)
+        if entry and (time.monotonic() - entry["ts"]) < _YF_CACHE_TTL:
+            return entry["data"]
+    return None
+
+def _cache_set(key: str, data) -> None:
+    with _YF_CACHE_LOCK:
+        _YF_CACHE[key] = {"data": data, "ts": time.monotonic()}
+
+def _yf_session():
+    """Return a requests.Session that looks like a browser to Yahoo Finance."""
+    import requests
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+    return s
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -186,14 +219,38 @@ async def _fetch_options_chain_yfinance(
 ) -> tuple[list[dict], list[str]]:
     """
     Fetch options chain from Yahoo Finance (free tier).
+    Uses a 5-minute in-memory cache and a browser User-Agent to avoid rate limiting.
+    Retries once after 2 s on a 429/rate-limit response.
     Runs the synchronous yfinance calls in a thread executor.
     Returns (rows, all_expirations).
     """
+    cache_key = f"chain|{symbol.upper()}|{expiration_date}|{contract_type}|{limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.info("yfinance cache hit for %s", symbol)
+        return cached
+
     def _sync_fetch() -> tuple[list[dict], list[str]]:
         import yfinance as yf
 
-        ticker = yf.Ticker(symbol.upper())
-        all_expirations: list[str] = list(ticker.options)
+        session = _yf_session()
+        sym = symbol.upper()
+
+        # Fetch expiration dates, retry once on rate limit
+        all_expirations: list[str] = []
+        for attempt in range(2):
+            try:
+                ticker = yf.Ticker(sym, session=session)
+                all_expirations = list(ticker.options)
+                break
+            except Exception as exc:
+                msg = str(exc).lower()
+                if attempt == 0 and ("rate" in msg or "429" in msg or "too many" in msg):
+                    logger.warning("yfinance rate-limited for %s, retrying in 2 s…", sym)
+                    time.sleep(2)
+                    continue
+                logger.error("yfinance options list failed for %s: %s", sym, exc, exc_info=True)
+                raise
 
         if not all_expirations:
             return [], []
@@ -209,7 +266,8 @@ async def _fetch_options_chain_yfinance(
         for expiry in expirations_to_fetch:
             try:
                 chain = ticker.option_chain(expiry)
-            except Exception:
+            except Exception as exc:
+                logger.warning("yfinance option_chain(%s, %s) failed: %s", sym, expiry, exc)
                 continue
 
             if contract_type != "put":
@@ -224,27 +282,48 @@ async def _fetch_options_chain_yfinance(
 
     loop = asyncio.get_event_loop()
     try:
-        rows, expirations = await loop.run_in_executor(None, _sync_fetch)
-        return rows, expirations
+        result = await loop.run_in_executor(None, _sync_fetch)
+        _cache_set(cache_key, result)
+        return result
     except Exception as exc:
-        logger.error("yfinance fallback failed for %s: %s", symbol, exc)
+        logger.error("yfinance fallback failed for %s: %s", symbol, exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Options data unavailable from all sources.",
+            detail=f"Options data unavailable: {exc}",
         )
 
 
 async def _fetch_expiries_yfinance(symbol: str) -> list[str]:
-    """Return available expiration dates from yfinance (free-tier fallback)."""
+    """Return available expiration dates from yfinance (free-tier fallback, cached 5 min)."""
+    cache_key = f"expiries|{symbol.upper()}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.info("yfinance expiries cache hit for %s", symbol)
+        return cached
+
     def _sync() -> list[str]:
         import yfinance as yf
-        return list(yf.Ticker(symbol.upper()).options)
+        session = _yf_session()
+        for attempt in range(2):
+            try:
+                return list(yf.Ticker(symbol.upper(), session=session).options)
+            except Exception as exc:
+                msg = str(exc).lower()
+                if attempt == 0 and ("rate" in msg or "429" in msg or "too many" in msg):
+                    logger.warning("yfinance rate-limited (expiries) for %s, retrying in 2 s…", symbol)
+                    time.sleep(2)
+                    continue
+                logger.warning("yfinance expiries failed for %s: %s", symbol, exc)
+                return []
+        return []
 
     loop = asyncio.get_event_loop()
     try:
-        return await loop.run_in_executor(None, _sync)
+        result = await loop.run_in_executor(None, _sync)
+        _cache_set(cache_key, result)
+        return result
     except Exception as exc:
-        logger.warning("yfinance expiries failed for %s: %s", symbol, exc)
+        logger.warning("yfinance expiries executor failed for %s: %s", symbol, exc)
         return []
 
 
