@@ -23,10 +23,16 @@ router = APIRouter()
 
 POLYGON_BASE = "https://api.polygon.io"
 
-# ── yfinance in-memory cache (avoids hammering Yahoo Finance on every request) ──
+# ── Yahoo Finance fallback cache + persistent session ─────────────────────────
+# Cache avoids re-hitting Yahoo Finance on every request.
+# Persistent session reuses TCP connections (keep-alive) so Yahoo doesn't see
+# a flood of new-connection requests from the Railway IP.
 _YF_CACHE: dict = {}
-_YF_CACHE_TTL = 300          # 5 minutes
+_YF_CACHE_TTL = 900          # 15 minutes
 _YF_CACHE_LOCK = threading.Lock()
+
+_YF_SESSION = None           # module-level, shared across all requests
+_YF_SESSION_LOCK = threading.Lock()
 
 def _cache_get(key: str):
     with _YF_CACHE_LOCK:
@@ -39,20 +45,29 @@ def _cache_set(key: str, data) -> None:
     with _YF_CACHE_LOCK:
         _YF_CACHE[key] = {"data": data, "ts": time.monotonic()}
 
-def _yf_session():
-    """Return a requests.Session that looks like a browser to Yahoo Finance."""
-    import requests
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-    })
-    return s
+def _get_yf_session():
+    """Return (or create) the module-level persistent requests.Session."""
+    global _YF_SESSION
+    with _YF_SESSION_LOCK:
+        if _YF_SESSION is None:
+            import requests
+            from requests.adapters import HTTPAdapter
+            s = requests.Session()
+            # Generous connection pool so keep-alive sockets are reused
+            adapter = HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=0)
+            s.mount("https://", adapter)
+            s.headers.update({
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Connection": "keep-alive",
+            })
+            _YF_SESSION = s
+        return _YF_SESSION
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -233,24 +248,37 @@ async def _fetch_options_chain_yfinance(
     def _sync_fetch() -> tuple[list[dict], list[str]]:
         import yfinance as yf
 
-        session = _yf_session()
+        session = _get_yf_session()   # reuse the persistent module-level session
         sym = symbol.upper()
+        ticker = yf.Ticker(sym, session=session)
 
-        # Fetch expiration dates, retry once on rate limit
+        # Exponential backoff: up to 3 retries at 5 s, 15 s, 30 s
+        _BACKOFFS = [5, 15, 30]
         all_expirations: list[str] = []
-        for attempt in range(2):
+        last_exc: Exception | None = None
+        for attempt, backoff in enumerate([0] + _BACKOFFS):
+            if backoff:
+                logger.warning(
+                    "yfinance rate-limited for %s (attempt %d/%d), waiting %d s…",
+                    sym, attempt, len(_BACKOFFS) + 1, backoff,
+                )
+                time.sleep(backoff)
             try:
-                ticker = yf.Ticker(sym, session=session)
                 all_expirations = list(ticker.options)
+                last_exc = None
                 break
             except Exception as exc:
+                last_exc = exc
                 msg = str(exc).lower()
-                if attempt == 0 and ("rate" in msg or "429" in msg or "too many" in msg):
-                    logger.warning("yfinance rate-limited for %s, retrying in 2 s…", sym)
-                    time.sleep(2)
-                    continue
+                if "rate" in msg or "429" in msg or "too many" in msg:
+                    continue       # eligible for retry
+                # Non-rate-limit error — bail immediately
                 logger.error("yfinance options list failed for %s: %s", sym, exc, exc_info=True)
                 raise
+
+        if last_exc is not None:
+            logger.error("yfinance still rate-limited after retries for %s: %s", sym, last_exc, exc_info=True)
+            raise last_exc
 
         if not all_expirations:
             return [], []
@@ -303,18 +331,30 @@ async def _fetch_expiries_yfinance(symbol: str) -> list[str]:
 
     def _sync() -> list[str]:
         import yfinance as yf
-        session = _yf_session()
-        for attempt in range(2):
+
+        session = _get_yf_session()   # reuse the persistent module-level session
+        ticker = yf.Ticker(symbol.upper(), session=session)
+
+        _BACKOFFS = [5, 15, 30]
+        last_exc: Exception | None = None
+        for attempt, backoff in enumerate([0] + _BACKOFFS):
+            if backoff:
+                logger.warning(
+                    "yfinance rate-limited (expiries) for %s (attempt %d/%d), waiting %d s…",
+                    symbol, attempt, len(_BACKOFFS) + 1, backoff,
+                )
+                time.sleep(backoff)
             try:
-                return list(yf.Ticker(symbol.upper(), session=session).options)
+                return list(ticker.options)
             except Exception as exc:
+                last_exc = exc
                 msg = str(exc).lower()
-                if attempt == 0 and ("rate" in msg or "429" in msg or "too many" in msg):
-                    logger.warning("yfinance rate-limited (expiries) for %s, retrying in 2 s…", symbol)
-                    time.sleep(2)
+                if "rate" in msg or "429" in msg or "too many" in msg:
                     continue
                 logger.warning("yfinance expiries failed for %s: %s", symbol, exc)
                 return []
+
+        logger.warning("yfinance expiries still rate-limited after retries for %s: %s", symbol, last_exc)
         return []
 
     loop = asyncio.get_event_loop()
