@@ -234,6 +234,20 @@ async def _fetch_options_chain_yfinance(
         )
 
 
+async def _fetch_expiries_yfinance(symbol: str) -> list[str]:
+    """Return available expiration dates from yfinance (free-tier fallback)."""
+    def _sync() -> list[str]:
+        import yfinance as yf
+        return list(yf.Ticker(symbol.upper()).options)
+
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(None, _sync)
+    except Exception as exc:
+        logger.warning("yfinance expiries failed for %s: %s", symbol, exc)
+        return []
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.get("/expiries/{symbol}")
@@ -243,7 +257,8 @@ async def get_option_expiries(
     request: Request,
     _user: dict = Depends(get_current_user),
 ):
-    """Return available expiration dates for a symbol (from Polygon reference API)."""
+    """Return available expiration dates for a symbol. Tries Polygon first, yfinance as fallback."""
+    expiries: list[str] = []
     try:
         today = date.today().isoformat()
         data = await polygon_get(
@@ -258,12 +273,13 @@ async def get_option_expiries(
         )
         results = data.get("results", [])
         expiries = sorted({r["expiration_date"] for r in results if "expiration_date" in r})
-        return {"symbol": symbol.upper(), "expiration_dates": expiries}
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error("Error fetching expiries for %s: %s", symbol, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.info("Polygon expiries failed for %s (%s) — falling back to yfinance", symbol, e)
+
+    if not expiries:
+        expiries = await _fetch_expiries_yfinance(symbol)
+
+    return {"symbol": symbol.upper(), "expiration_dates": expiries}
 
 
 @router.get("/chain/{symbol}")
@@ -285,13 +301,13 @@ async def get_options_chain(
     try:
         rows = await _fetch_options_chain(symbol, expiration_date, contract_type, limit)
     except HTTPException as exc:
-        if exc.status_code == status.HTTP_402_PAYMENT_REQUIRED:
-            logger.info("Polygon free tier for %s — falling back to yfinance", symbol)
-            rows, all_expirations = await _fetch_options_chain_yfinance(
-                symbol, expiration_date, contract_type, limit
-            )
-        else:
-            raise
+        logger.info(
+            "Polygon options chain failed (%s) for %s — falling back to yfinance",
+            exc.status_code, symbol,
+        )
+        rows, all_expirations = await _fetch_options_chain_yfinance(
+            symbol, expiration_date, contract_type, limit
+        )
 
     calls = sorted(
         [r for r in rows if r["contract_type"] == "call"],
