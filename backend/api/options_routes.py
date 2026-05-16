@@ -514,7 +514,7 @@ async def get_option_contract(
 
 
 @router.post("/order")
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 async def place_options_order(
     order: OptionsOrderRequest,
     request: Request,
@@ -522,9 +522,24 @@ async def place_options_order(
 ):
     """Place a live options order via SnapTrade."""
     try:
-        from services.snaptrade_service import snaptrade
+        from services.supabase_client import supabase as _supabase
+        from services.snaptrade_service import SnapTradeService, snaptrade
+
+        user_id = current_user["user_id"]
+
+        rows = await _supabase.table("snaptrade_users").select("user_secret").eq("user_id", user_id).execute()
+        if not rows or len(rows) == 0:
+            raise HTTPException(status_code=404, detail="SnapTrade account not linked. Please register first.")
+        user_secret = rows[0]["user_secret"]
+
+        service = SnapTradeService()
+        accounts = await service.list_accounts(user_id, user_secret)
+        account_ids = {a["id"] for a in accounts}
+        if order.account_id not in account_ids:
+            raise HTTPException(status_code=403, detail="Account does not belong to authenticated user")
+
         result = await snaptrade.place_order(
-            user_id=current_user["user_id"],
+            user_id=user_id,
             account_id=order.account_id,
             symbol=order.option_symbol,
             action=order.action,
