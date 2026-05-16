@@ -459,6 +459,9 @@ async def get_options_chain(
     Return the live options chain for a ticker.
     Tries Polygon first; falls back to yfinance when Polygon is on the free tier (403).
     """
+    symbol = validate_ticker(symbol)
+    if expiration_date:
+        expiration_date = validate_expiry(expiration_date)
     all_expirations: list[str] = []
 
     try:

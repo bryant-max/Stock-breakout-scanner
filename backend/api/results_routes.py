@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Security
+from fastapi import APIRouter, HTTPException, Query, Request, Security
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import logging
@@ -6,6 +6,7 @@ import logging
 from schemas.api_models import ResultsResponse, validate_symbol_path
 from services.supabase_client import supabase
 from middleware.auth import get_current_user
+from middleware.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,9 @@ router = APIRouter()
 
 
 @router.get("/", response_model=ResultsResponse)
+@limiter.limit("20/minute")
 async def get_recent_results(
+    request: Request,
     limit: int = Query(25, ge=1, le=100),
     min_score: Optional[int] = Query(None, ge=0, le=100),
     setup_type: Optional[str] = None,
@@ -65,7 +68,9 @@ async def get_recent_results(
 
 
 @router.get("/{symbol}", response_model=ResultsResponse)
+@limiter.limit("20/minute")
 async def get_symbol_results(
+    request: Request,
     symbol: str,
     limit: int = Query(10, ge=1, le=50),
     user: dict = Security(get_current_user, scopes=[])
@@ -98,7 +103,9 @@ async def get_symbol_results(
 
 
 @router.get("/top/today")
+@limiter.limit("20/minute")
 async def get_top_today(
+    request: Request,
     limit: int = Query(10, ge=1, le=50),
     user: dict = Security(get_current_user, scopes=[])
 ):
@@ -126,7 +133,9 @@ async def get_top_today(
 
 
 @router.delete("/{symbol}")
+@limiter.limit("10/minute")
 async def delete_symbol_results(
+    request: Request,
     symbol: str,
     user: dict = Security(get_current_user, scopes=[])
 ):

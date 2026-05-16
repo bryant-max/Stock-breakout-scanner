@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone
 
 from middleware.auth import get_current_user
+from middleware.rate_limit import limiter
 from services.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,8 @@ class UserPlanUpdate(BaseModel):
 # ── Platform stats ──────────────────────────────────────────────────────────
 
 @router.get("/stats")
-async def get_platform_stats(admin: dict = Depends(_require_admin)):
+@limiter.limit("10/minute")
+async def get_platform_stats(request: Request, admin: dict = Depends(_require_admin)):
     """Return aggregate platform metrics for the admin overview dashboard."""
     try:
         users = await supabase.table("profiles").select("id,created_at").execute()
@@ -84,7 +86,8 @@ async def get_platform_stats(admin: dict = Depends(_require_admin)):
 # ── User management ─────────────────────────────────────────────────────────
 
 @router.get("/users")
-async def list_users(admin: dict = Depends(_require_admin)):
+@limiter.limit("10/minute")
+async def list_users(request: Request, admin: dict = Depends(_require_admin)):
     """List all users with their subscription info."""
     try:
         profiles = await supabase.table("profiles").select("id,email,full_name,created_at,is_admin").order("created_at", desc=True).execute()
@@ -107,7 +110,8 @@ async def list_users(admin: dict = Depends(_require_admin)):
 
 
 @router.patch("/users/{user_id}/plan")
-async def update_user_plan(user_id: str, body: UserPlanUpdate, admin: dict = Depends(_require_admin)):
+@limiter.limit("10/minute")
+async def update_user_plan(request: Request, user_id: str, body: UserPlanUpdate, admin: dict = Depends(_require_admin)):
     """Manually set a user's subscription plan."""
     allowed_plans = {"free", "core", "premium"}
     if body.plan not in allowed_plans:
@@ -135,7 +139,8 @@ async def update_user_plan(user_id: str, body: UserPlanUpdate, admin: dict = Dep
 # ── AI Knowledge Base ────────────────────────────────────────────────────────
 
 @router.get("/knowledge")
-async def list_knowledge(admin: dict = Depends(_require_admin)):
+@limiter.limit("10/minute")
+async def list_knowledge(request: Request, admin: dict = Depends(_require_admin)):
     """List all AI knowledge base entries."""
     try:
         rows = await supabase.table("ai_knowledge_base").select().order("created_at", desc=True).execute()
@@ -146,7 +151,8 @@ async def list_knowledge(admin: dict = Depends(_require_admin)):
 
 
 @router.post("/knowledge")
-async def create_knowledge(body: KnowledgeCreate, admin: dict = Depends(_require_admin)):
+@limiter.limit("10/minute")
+async def create_knowledge(request: Request, body: KnowledgeCreate, admin: dict = Depends(_require_admin)):
     """Add a new entry to the AI knowledge base."""
     if not body.content.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content cannot be empty")
@@ -165,7 +171,8 @@ async def create_knowledge(body: KnowledgeCreate, admin: dict = Depends(_require
 
 
 @router.delete("/knowledge/{entry_id}")
-async def delete_knowledge(entry_id: str, admin: dict = Depends(_require_admin)):
+@limiter.limit("10/minute")
+async def delete_knowledge(request: Request, entry_id: str, admin: dict = Depends(_require_admin)):
     """Delete an AI knowledge base entry."""
     try:
         await supabase.table("ai_knowledge_base").delete().eq("id", entry_id).execute()
