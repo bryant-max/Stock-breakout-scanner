@@ -14,22 +14,29 @@ limiter = Limiter(key_func=get_remote_address)
 
 def rate_limit_by_user(request: Request) -> str:
     """
-    Rate limit based on authenticated user ID.
-    Falls back to IP address for unauthenticated requests.
+    Rate limit based on authenticated user ID (JWT sub claim).
+    Falls back to a stable token hash, then to IP address for unauthenticated requests.
     """
-    # Try to get user from auth header
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:]
         try:
-            # Extract user_id from token (simplified)
-            # In production, you'd decode the JWT token
-            token = auth_header.replace("Bearer ", "")
-            # For now, use the token hash as identifier
-            return f"user_{hash(token)}"
-        except:
+            import jwt
+            import os as _os
+            secret = _os.getenv("SUPABASE_JWT_SECRET", "")
+            if secret:
+                payload = jwt.decode(
+                    token,
+                    secret,
+                    algorithms=["HS256"],
+                    audience="authenticated",
+                )
+                return f"user:{payload.get('sub', 'unknown')}"
+        except Exception:
             pass
-
-    # Fallback to IP address
+        # Fall back to hashing the token if decode fails (e.g. no secret configured)
+        import hashlib
+        return f"token:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
     return get_remote_address(request)
 
 

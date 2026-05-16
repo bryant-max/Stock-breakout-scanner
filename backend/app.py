@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -52,6 +55,23 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "User-Agent"],
     max_age=3600,
 )
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject security headers into every response."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # Note: Strict-Transport-Security is intentionally omitted here;
+        # Railway/Vercel inject it at the edge to avoid duplicate headers.
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 register_error_handlers(app)
 setup_rate_limiting(app)

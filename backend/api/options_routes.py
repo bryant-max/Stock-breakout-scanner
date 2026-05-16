@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from middleware.auth import get_current_user
 from middleware.rate_limit import limiter
+from middleware.validation import validate_ticker, validate_expiry, validate_quantity, validate_price
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -86,20 +87,39 @@ class PaperTradeCreate(BaseModel):
     @field_validator("symbol")
     @classmethod
     def upper_symbol(cls, v: str) -> str:
-        return v.strip().upper()
+        import re
+        s = v.strip().upper()
+        if not re.match(r'^[A-Z]{1,5}$', s):
+            raise ValueError(f"Invalid ticker symbol: {v!r}")
+        return s
 
     @field_validator("quantity")
     @classmethod
     def positive_qty(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError("Quantity must be at least 1")
+        if v < 1 or v > 10_000:
+            raise ValueError("Quantity must be 1–10,000")
         return v
 
     @field_validator("price_per_contract")
     @classmethod
     def positive_price(cls, v: float) -> float:
+        if v <= 0 or v > 100_000:
+            raise ValueError("Price must be > 0 and ≤ 100,000")
+        return round(v, 2)
+
+    @field_validator("expiration_date")
+    @classmethod
+    def valid_expiry(cls, v: str) -> str:
+        import re
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', v):
+            raise ValueError(f"Invalid expiry date format (expected YYYY-MM-DD): {v!r}")
+        return v
+
+    @field_validator("strike_price")
+    @classmethod
+    def positive_strike(cls, v: float) -> float:
         if v <= 0:
-            raise ValueError("Price must be positive")
+            raise ValueError("Strike price must be positive")
         return v
 
 
@@ -111,6 +131,29 @@ class OptionsOrderRequest(BaseModel):
     order_type: Literal["Market", "Limit"]
     quantity: int
     limit_price: Optional[float] = None
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, v: str) -> str:
+        import re
+        s = v.strip().upper()
+        if not re.match(r'^[A-Z]{1,5}$', s):
+            raise ValueError(f"Invalid ticker symbol: {v!r}")
+        return s
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_qty(cls, v: int) -> int:
+        if v < 1 or v > 10_000:
+            raise ValueError("Quantity must be 1–10,000")
+        return v
+
+    @field_validator("limit_price")
+    @classmethod
+    def validate_limit_price(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("Limit price must be positive")
+        return v
 
 
 # ── Polygon helpers ────────────────────────────────────────────────────────────
@@ -377,13 +420,14 @@ async def get_option_expiries(
     _user: dict = Depends(get_current_user),
 ):
     """Return available expiration dates for a symbol. Tries Polygon first, yfinance as fallback."""
+    symbol = validate_ticker(symbol)
     expiries: list[str] = []
     try:
         today = date.today().isoformat()
         data = await polygon_get(
             "/v3/reference/options/contracts",
             {
-                "underlying_ticker": symbol.upper(),
+                "underlying_ticker": symbol,
                 "expiration_date.gte": today,
                 "limit": 250,
                 "sort": "expiration_date",
