@@ -3,7 +3,7 @@ import { BreakoutScan } from '@/hooks/useScanResults'
 import { X, Heart, Loader2, BarChart2, LineChart, Layers } from 'lucide-react'
 import { TradingViewWidget } from './TradingViewWidget'
 import { OptionsChain, OptionsContract } from './OptionsChain'
-import { PaperTradeModal } from './PaperTradeModal'
+import { OptionsTradePanel } from './OptionsTradePanel'
 import { addToWatchlist, removeFromWatchlist, checkInWatchlist } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -19,7 +19,7 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
   const [watchlistLoading, setWatchlistLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<DetailTab>('chart')
   const [selectedContract, setSelectedContract] = useState<OptionsContract | null>(null)
-  const [showPaperTrade, setShowPaperTrade] = useState(false)
+  const [showOptionsPanel, setShowOptionsPanel] = useState(false)
 
   useEffect(() => {
     if (scan?.symbol) {
@@ -28,7 +28,7 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
     // Reset state when a new stock is selected
     setActiveTab('chart')
     setSelectedContract(null)
-    setShowPaperTrade(false)
+    setShowOptionsPanel(false)
   }, [scan?.symbol])
 
   const toggleWatchlist = async () => {
@@ -42,7 +42,7 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
 
   const handleContractSelect = (contract: OptionsContract) => {
     setSelectedContract(contract)
-    setShowPaperTrade(true)
+    setShowOptionsPanel(true)
   }
 
   if (!scan) return null
@@ -245,10 +245,18 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
           {/* OPTIONS TAB */}
           {activeTab === 'options' && (
             <div className="space-y-3">
-              <p className="text-xs text-zinc-500">
-                Click a contract row or the cart icon to paper-trade it.
-              </p>
-              <OptionsChain symbol={scan.symbol} onSelectContract={handleContractSelect} />
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-zinc-500">
+                  Click a contract to trade it, or open the full trading panel below.
+                </p>
+                <button
+                  onClick={() => setShowOptionsPanel(true)}
+                  className="px-3 py-1.5 text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors"
+                >
+                  Open Trade Panel
+                </button>
+              </div>
+              <OptionsChain symbol={scan.symbol} onSelectContract={c => { setSelectedContract(c); setShowOptionsPanel(true) }} />
             </div>
           )}
         </div>
@@ -259,12 +267,12 @@ export function StockDetailPanel({ scan, onClose }: StockDetailPanelProps) {
         </div>
       </div>
 
-      {/* Paper trade modal — rendered outside the panel so it sits on top */}
-      {showPaperTrade && selectedContract && (
-        <PaperTradeModal
-          symbol={scan.symbol}
-          contract={selectedContract}
-          onClose={() => { setShowPaperTrade(false); setSelectedContract(null) }}
+      {showOptionsPanel && (
+        <OptionsTradePanel
+          ticker={scan.symbol}
+          isOpen={showOptionsPanel}
+          onClose={() => { setShowOptionsPanel(false); setSelectedContract(null) }}
+          initialContract={selectedContract ?? undefined}
         />
       )}
     </>
