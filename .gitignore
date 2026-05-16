@@ -12,6 +12,7 @@ backend/.env.*
 frontend/dist
 frontend/tsconfig.tsbuildinfo
 # Local tooling
+.claude/worktrees/
 # Ensure editor/OS cruft stays out
 .DS_Store
 # Python virtual environments

@@ -7,12 +7,18 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, Literal
 from middleware.auth import get_current_user
 from middleware.rate_limit import limiter
+from middleware.validation import validate_ticker, validate_account_id
 from services.snaptrade_service import SnapTradeService
 from services.supabase_client import supabase
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ── Order size limits ──────────────────────────────────────────────────
+MAX_EQUITY_SHARES = 10_000
+MAX_OPTIONS_CONTRACTS = 1_000
+MAX_ORDER_VALUE_USD = 500_000
 
 
 def get_snaptrade_service() -> SnapTradeService:
@@ -36,6 +42,8 @@ class PlaceOrderRequest(BaseModel):
     def validate_quantity(cls, v):
         if v <= 0:
             raise ValueError("Quantity must be positive")
+        if v > MAX_EQUITY_SHARES:
+            raise ValueError(f"Quantity exceeds maximum allowed ({MAX_EQUITY_SHARES} shares)")
         return v
 
     @field_validator('price', 'stop_price')
@@ -59,6 +67,8 @@ class OrderImpactRequest(BaseModel):
     def validate_quantity(cls, v):
         if v <= 0:
             raise ValueError("Quantity must be positive")
+        if v > MAX_EQUITY_SHARES:
+            raise ValueError(f"Quantity exceeds maximum allowed ({MAX_EQUITY_SHARES} shares)")
         return v
 
 
@@ -130,6 +140,7 @@ async def get_connect_url(
 
 
 @router.get("/status")
+@limiter.limit("20/minute")
 async def get_connection_status(
     request: Request,
     user: dict = Security(get_current_user, scopes=[]),
@@ -156,6 +167,7 @@ async def get_connection_status(
 # ── Accounts & Balances ────────────────────────────────────────────────
 
 @router.get("/accounts")
+@limiter.limit("20/minute")
 async def list_accounts(
     request: Request,
     user: dict = Security(get_current_user, scopes=[]),
@@ -170,6 +182,7 @@ async def list_accounts(
 
 
 @router.get("/accounts/{account_id}/balances")
+@limiter.limit("20/minute")
 async def get_account_balances(
     account_id: str,
     request: Request,
@@ -180,6 +193,12 @@ async def get_account_balances(
     user_id = user["user_id"]
     user_secret = await get_user_secret(user_id)
 
+    # Verify account belongs to the authenticated user
+    accounts = await service.list_accounts(user_id, user_secret)
+    account_ids = {str(a.get("id") or a.get("accountId", "")) for a in (accounts or [])}
+    if account_id not in account_ids:
+        raise HTTPException(status_code=403, detail="Account does not belong to authenticated user")
+
     balances = await service.get_account_balances(user_id, user_secret, account_id)
     return {"balances": balances or []}
 
@@ -187,6 +206,7 @@ async def get_account_balances(
 # ── Portfolio / Holdings ───────────────────────────────────────────────
 
 @router.get("/holdings/{account_id}")
+@limiter.limit("20/minute")
 async def get_holdings(
     account_id: str,
     request: Request,
@@ -197,11 +217,18 @@ async def get_holdings(
     user_id = user["user_id"]
     user_secret = await get_user_secret(user_id)
 
+    # Verify account belongs to the authenticated user
+    accounts = await service.list_accounts(user_id, user_secret)
+    account_ids = {str(a.get("id") or a.get("accountId", "")) for a in (accounts or [])}
+    if account_id not in account_ids:
+        raise HTTPException(status_code=403, detail="Account does not belong to authenticated user")
+
     holdings = await service.get_holdings(user_id, user_secret, account_id)
     return {"holdings": holdings}
 
 
 @router.get("/holdings")
+@limiter.limit("20/minute")
 async def get_all_holdings(
     request: Request,
     user: dict = Security(get_current_user, scopes=[]),
@@ -229,6 +256,16 @@ async def preview_order(
     user_id = user["user_id"]
     user_secret = await get_user_secret(user_id)
 
+    # Verify account belongs to the authenticated user
+    accounts = await service.list_accounts(user_id, user_secret)
+    account_ids = {str(a.get("id") or a.get("accountId", "")) for a in (accounts or [])}
+    if body.account_id not in account_ids:
+        raise HTTPException(status_code=403, detail="Account does not belong to authenticated user")
+
+    # Validate order value if price is provided
+    if body.price and body.quantity * body.price > MAX_ORDER_VALUE_USD:
+        raise HTTPException(status_code=422, detail=f"Order value exceeds maximum allowed (${MAX_ORDER_VALUE_USD:,.0f})")
+
     impact = await service.get_order_impact(
         user_id=user_id,
         user_secret=user_secret,
@@ -243,7 +280,7 @@ async def preview_order(
 
 
 @router.post("/order/place")
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 async def place_order(
     body: PlaceOrderRequest,
     request: Request,
@@ -253,6 +290,16 @@ async def place_order(
     service = get_snaptrade_service()
     user_id = user["user_id"]
     user_secret = await get_user_secret(user_id)
+
+    # Verify account belongs to the authenticated user
+    accounts = await service.list_accounts(user_id, user_secret)
+    account_ids = {str(a.get("id") or a.get("accountId", "")) for a in (accounts or [])}
+    if body.account_id not in account_ids:
+        raise HTTPException(status_code=403, detail="Account does not belong to authenticated user")
+
+    # Validate order value does not exceed maximum
+    if body.price and body.quantity * body.price > MAX_ORDER_VALUE_USD:
+        raise HTTPException(status_code=422, detail=f"Order value exceeds maximum allowed (${MAX_ORDER_VALUE_USD:,.0f})")
 
     result = await service.place_order(
         user_id=user_id,
@@ -272,6 +319,7 @@ async def place_order(
 # ── Activity / Trade History ───────────────────────────────────────────
 
 @router.get("/activities")
+@limiter.limit("20/minute")
 async def get_activities(
     request: Request,
     user: dict = Security(get_current_user, scopes=[]),
