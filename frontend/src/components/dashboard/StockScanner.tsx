@@ -444,21 +444,24 @@ export function StockScanner() {
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                   <p className="text-xs text-white/50 mb-2">EMA Alignment</p>
                   <div className="space-y-1.5">
-                    {([
-                      { label: "EMA 8", val: symbolResult.ema8 },
-                      { label: "EMA 21", val: symbolResult.ema21 },
-                      { label: "EMA 50", val: symbolResult.ema50 },
-                    ] as const).map(({ label, val }) => (
-                      <div key={label} className="flex items-center justify-between text-xs">
-                        <span className="text-white/50">{label}</span>
-                        {val !== null && val !== undefined ? (
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-white font-medium">${val.toFixed(2)}</span>
-                            {emaStatus(symbolResult.price, val)}
-                          </span>
-                        ) : <span className="text-white/30">N/A</span>}
+                    <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">EMA 8</span>
+                        {symbolResult.ema8 != null
+                          ? <span className="flex items-center gap-1.5"><span className="text-white font-medium">${symbolResult.ema8.toFixed(2)}</span>{emaStatus(symbolResult.price, symbolResult.ema8)}</span>
+                          : <span className="text-white/30">N/A</span>}
                       </div>
-                    ))}
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">EMA 21</span>
+                        {symbolResult.ema21 != null
+                          ? <span className="flex items-center gap-1.5"><span className="text-white font-medium">${symbolResult.ema21.toFixed(2)}</span>{emaStatus(symbolResult.price, symbolResult.ema21)}</span>
+                          : <span className="text-white/30">N/A</span>}
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">EMA 50</span>
+                        {symbolResult.ema50 != null
+                          ? <span className="flex items-center gap-1.5"><span className="text-white font-medium">${symbolResult.ema50.toFixed(2)}</span>{emaStatus(symbolResult.price, symbolResult.ema50)}</span>
+                          : <span className="text-white/30">N/A</span>}
+                      </div>
                   </div>
                 </div>
               </div>
