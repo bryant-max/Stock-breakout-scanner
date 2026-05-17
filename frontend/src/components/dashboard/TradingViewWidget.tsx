@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useMemo } from 'react'
 
 type TradingViewWidgetProps = {
   symbol: string
@@ -22,9 +22,9 @@ function sanitizeSymbol(raw: string): string {
 
 function setupLabel(t: string | null | undefined): string {
   if (t === 'FLAT_TOP') return 'Flat Top Breakout'
-  if (t === 'WEDGE')    return 'Wedge Breakout'
-  if (t === 'FLAG')     return 'Flag Breakout'
-  if (t === 'BASE')     return 'Base Breakout'
+  if (t === 'WEDGE') return 'Wedge Breakout'
+  if (t === 'FLAG') return 'Flag Breakout'
+  if (t === 'BASE') return 'Base Breakout'
   return 'Breakout Level'
 }
 
@@ -44,9 +44,7 @@ export function TradingViewWidget({
 }: TradingViewWidgetProps) {
   const sym = sanitizeSymbol(symbol)
 
-  // Build the TradingView Advanced Chart embed URL
-  // Studies: EMA 8 (amber), EMA 21 (indigo), EMA 50 (sky) + Volume
-  // Locked to 1D interval
+  // Build TradingView iframe URL — always 1D, EMA 8/21/50 + Volume studies
   const src = useMemo(() => {
     const studies = [
       'MAExp@tv-basicstudies',
@@ -61,7 +59,7 @@ export function TradingViewWidget({
       theme: theme === 'light' ? 'light' : 'dark',
       style: '1',
       locale: 'en',
-      hide_side_toolbar: '1',
+      hide_side_toolbar: '0',
       allow_symbol_change: '0',
       enable_publishing: '0',
       withdateranges: '1',
@@ -75,99 +73,129 @@ export function TradingViewWidget({
     return `https://www.tradingview.com/widgetembed/?${params.toString()}`
   }, [sym, theme])
 
-  // Price levels to draw as overlay labels beside the chart
-  const levels = [
-    entry      != null ? { price: entry,        color: '#06b6d4', label: direction === 'Short' ? 'Short Entry' : 'Buy Entry', side: 'right' } : null,
-    stop       != null ? { price: stop,         color: '#ef4444', label: 'Stop Loss',                                          side: 'right' } : null,
-    target     != null ? { price: target,       color: '#10b981', label: 'Target',                                            side: 'right' } : null,
-    triggerPrice != null ? { price: triggerPrice, color: '#f97316', label: `⚡ ${setupLabel(setupType)}`,                       side: 'right' } : null,
-    ema8       != null ? { price: ema8,         color: '#f59e0b', label: 'EMA 8',                                             side: 'left'  } : null,
-    ema21      != null ? { price: ema21,        color: '#818cf8', label: 'EMA 21',                                            side: 'left'  } : null,
-    ema50      != null ? { price: ema50,        color: '#38bdf8', label: 'EMA 50',                                            side: 'left'  } : null,
-  ].filter(Boolean) as { price: number; color: string; label: string; side: string }[]
-
-  // All price levels to determine scale for vertical positioning
-  const allPrices = levels.map(l => l.price)
-  const minPrice = allPrices.length ? Math.min(...allPrices) * 0.985 : 0
-  const maxPrice = allPrices.length ? Math.max(...allPrices) * 1.015 : 1
-
-  const priceToPercent = (p: number) => {
-    if (maxPrice === minPrice) return 50
-    return 100 - ((p - minPrice) / (maxPrice - minPrice)) * 100
-  }
+  const entryLabel = direction === 'Short' ? 'Short Entry' : 'Buy Entry'
+  const hasTrade = entry != null || stop != null || target != null || triggerPrice != null
+  const hasEmas = ema8 != null || ema21 != null || ema50 != null
 
   return (
-    <div className="relative w-full" style={{ height }}>
-      {/* TradingView iframe — always 1D, EMA studies baked in */}
-      <iframe
-        key={sym}
-        src={src}
-        style={{ width: '100%', height: '100%', border: 'none' }}
-        allowFullScreen
-        title={`${sym} chart`}
-      />
+    <div className="w-full rounded-xl overflow-hidden border border-white/10" style={{ background: '#0b1018' }}>
+      {/* Clean TradingView chart — no overlay junk */}
+      <div style={{ height }}>
+        <iframe
+          key={sym}
+          src={src}
+          style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+          allowFullScreen
+          title={`${sym} chart`}
+        />
+      </div>
 
-      {/* Price level overlay — right side panel */}
-      {levels.length > 0 && (
+      {/* Key Levels Panel — clean strip below the chart */}
+      {(hasTrade || hasEmas) && (
         <div
-          className="absolute top-0 right-0 bottom-0 pointer-events-none"
-          style={{ width: 180, zIndex: 10 }}
+          style={{
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px',
+            background: '#0d1520',
+          }}
         >
-          {levels.filter(l => l.side === 'right').map((l, i) => (
-            <div
-              key={i}
-              className="absolute right-1 flex items-center gap-1.5"
-              style={{ top: `${priceToPercent(l.price)}%`, transform: 'translateY(-50%)' }}
-            >
-              <div style={{ width: 28, height: 2, backgroundColor: l.color, flexShrink: 0 }} />
-              <div
-                style={{
-                  backgroundColor: l.color,
-                  color: '#fff',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  whiteSpace: 'nowrap',
-                  fontFamily: 'monospace',
-                }}
-              >
-                {l.label} ${l.price.toFixed(2)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+          {/* Section label */}
+          <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 4 }}>
+            Key Levels
+          </span>
 
-      {/* EMA labels — left side panel */}
-      {levels.filter(l => l.side === 'left').length > 0 && (
-        <div
-          className="absolute top-0 left-0 bottom-0 pointer-events-none"
-          style={{ width: 140, zIndex: 10 }}
-        >
-          {levels.filter(l => l.side === 'left').map((l, i) => (
-            <div
-              key={i}
-              className="absolute left-1 flex items-center gap-1.5"
-              style={{ top: `${priceToPercent(l.price)}%`, transform: 'translateY(-50%)' }}
-            >
-              <div
-                style={{
-                  backgroundColor: l.color,
-                  color: '#fff',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  padding: '2px 5px',
-                  borderRadius: 4,
-                  whiteSpace: 'nowrap',
-                  fontFamily: 'monospace',
-                }}
-              >
-                {l.label} ${l.price.toFixed(2)}
-              </div>
-              <div style={{ width: 20, height: 2, backgroundColor: l.color, flexShrink: 0 }} />
+          {/* EMA badges */}
+          {ema8 != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
+              <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>EMA 8</span>
+              <span style={{ color: '#fcd34d', fontSize: 11, fontFamily: 'monospace' }}>${ema8.toFixed(2)}</span>
             </div>
-          ))}
+          )}
+          {ema21 != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#818cf8', flexShrink: 0 }} />
+              <span style={{ color: '#818cf8', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>EMA 21</span>
+              <span style={{ color: '#a5b4fc', fontSize: 11, fontFamily: 'monospace' }}>${ema21.toFixed(2)}</span>
+            </div>
+          )}
+          {ema50 != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38bdf8', flexShrink: 0 }} />
+              <span style={{ color: '#38bdf8', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>EMA 50</span>
+              <span style={{ color: '#7dd3fc', fontSize: 11, fontFamily: 'monospace' }}>${ema50.toFixed(2)}</span>
+            </div>
+          )}
+
+          {/* Divider between EMAs and trade levels */}
+          {hasEmas && hasTrade && (
+            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+          )}
+
+          {/* Trigger / Breakout level */}
+          {triggerPrice != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <span style={{ fontSize: 11 }}>⚡</span>
+              <span style={{ color: '#f97316', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>{setupLabel(setupType)}</span>
+              <span style={{ color: '#fdba74', fontSize: 11, fontFamily: 'monospace' }}>${triggerPrice.toFixed(2)}</span>
+            </div>
+          )}
+
+          {/* Entry */}
+          {entry != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <span style={{ color: '#06b6d4', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>{entryLabel}</span>
+              <span style={{ color: '#67e8f9', fontSize: 11, fontFamily: 'monospace' }}>${entry.toFixed(2)}</span>
+            </div>
+          )}
+
+          {/* Stop Loss */}
+          {stop != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <span style={{ color: '#ef4444', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>Stop Loss</span>
+              <span style={{ color: '#fca5a5', fontSize: 11, fontFamily: 'monospace' }}>${stop.toFixed(2)}</span>
+            </div>
+          )}
+
+          {/* Target */}
+          {target != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.4)',
+              borderRadius: 6, padding: '3px 9px',
+            }}>
+              <span style={{ color: '#10b981', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>Target</span>
+              <span style={{ color: '#6ee7b7', fontSize: 11, fontFamily: 'monospace' }}>${target.toFixed(2)}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
