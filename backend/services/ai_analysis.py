@@ -431,7 +431,7 @@ Respond with this exact JSON:
 **Trend Analysis**:
 - EMA21: ${result.ema21:.2f}
 - EMA50: ${result.ema50:.2f}
-- EMA200: ${result.ema200:.2f}
+- EMA8: ${result.ema8:.2f if result.ema8 else "N/A"}
 - Trend: {trend_strength}
 
 **Volume & Liquidity**:
@@ -460,7 +460,7 @@ Respond with this exact JSON format:
         ema50 = result.ema50
         ema200 = result.ema200
 
-        if price > ema21 > ema50 > ema200:
+        if ema200 and price > ema21 > ema50 > ema200:
             return "Strong Uptrend (All EMAs Aligned)"
         elif price > ema21 > ema50:
             return "Moderate Uptrend"
