@@ -69,7 +69,6 @@ export function TradingViewWidget({
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
   }
-
   const addTimer = (t: ReturnType<typeof setTimeout>) => {
     timersRef.current.push(t)
   }
@@ -80,10 +79,35 @@ export function TradingViewWidget({
     if (!container) return
 
     const tvSymbol = sanitizeSymbol(symbol)
+    const isShort = direction === 'Short'
 
     const createWidget = () => {
       if (!mounted || !window.TradingView || !container) return
       container.innerHTML = ''
+
+      // EMA studies baked into the widget config — these work with the free tv.js widget
+      // The widget renders them as actual EMA lines on the candle chart
+      const studies = [
+        'Volume@tv-basicstudies',
+        // EMA 8 — amber
+        JSON.stringify({
+          id: 'MAExp@tv-basicstudies',
+          inputs: { length: 8 },
+          styles: { plot_0: { linewidth: 1, plottype: 0, color: '#f59e0b', transparency: 0 } },
+        }),
+        // EMA 21 — indigo
+        JSON.stringify({
+          id: 'MAExp@tv-basicstudies',
+          inputs: { length: 21 },
+          styles: { plot_0: { linewidth: 1, plottype: 0, color: '#818cf8', transparency: 0 } },
+        }),
+        // EMA 50 — sky
+        JSON.stringify({
+          id: 'MAExp@tv-basicstudies',
+          inputs: { length: 50 },
+          styles: { plot_0: { linewidth: 2, plottype: 0, color: '#38bdf8', transparency: 0 } },
+        }),
+      ]
 
       const widget = new window.TradingView.widget({
         container_id: containerId,
@@ -101,14 +125,13 @@ export function TradingViewWidget({
         hide_side_toolbar: true,
         withdateranges: true,
         range: '6M',
-        studies: ['Volume@tv-basicstudies'],
+        studies,
         support_host: 'https://www.tradingview.com',
       })
 
       widget.onChartReady(() => {
         if (!mounted) return
         const chart = widget.activeChart()
-        const isShort = direction === 'Short'
 
         // --- Trade levels (entry / stop / target) as order lines ---
         const levels = { entry, stop, target }
@@ -128,101 +151,20 @@ export function TradingViewWidget({
           } catch (_) { /* ignore */ }
         }
 
-        // --- EMA horizontal lines via createShape ---
-        const emaLines = [
-          { val: ema8,  color: '#f59e0b', label: 'EMA 8',  linewidth: 1 },
-          { val: ema21, color: '#818cf8', label: 'EMA 21', linewidth: 1 },
-          { val: ema50, color: '#38bdf8', label: 'EMA 50', linewidth: 2 },
-        ]
-        for (const e of emaLines) {
-          if (e.val == null) continue
-          try {
-            // createMultipointShape with 2 points far apart for a horizontal price line
-            chart.createMultipointShape(
-              [
-                { time: 0, price: e.val },
-                { time: 9999999999, price: e.val },
-              ],
-              {
-                shape: 'horizontal_line',
-                lock: true,
-                disableSelection: true,
-                disableSave: true,
-                disableUndo: true,
-                text: `${e.label} $${e.val.toFixed(2)}`,
-                overrides: {
-                  linecolor: e.color,
-                  linewidth: e.linewidth,
-                  linestyle: 1, // 1 = dashed
-                  showLabel: true,
-                  textcolor: e.color,
-                  fontsize: 11,
-                  bold: false,
-                  italic: false,
-                  horzLabelsAlign: 'right',
-                  vertLabelsAlign: 'bottom',
-                },
-              }
-            )
-          } catch (_) {
-            // Fallback: use order line if shape API unsupported
-            try {
-              chart.createOrderLine()
-                .setPrice(e.val)
-                .setText(`${e.label} $${e.val.toFixed(2)}`)
-                .setQuantity('')
-                .setLineColor(e.color)
-                .setBodyBackgroundColor('rgba(15,17,26,0.85)')
-                .setBodyTextColor(e.color)
-                .setBodyBorderColor(e.color)
-                .setLineWidth(1)
-            } catch (__) { /* ignore */ }
-          }
-        }
-
-        // --- Trigger / Breakout level ---
+        // --- Trigger / Breakout level as order line ---
         if (triggerPrice) {
           const label = setupLabel(setupType)
           try {
-            chart.createMultipointShape(
-              [
-                { time: 0, price: triggerPrice },
-                { time: 9999999999, price: triggerPrice },
-              ],
-              {
-                shape: 'horizontal_line',
-                lock: true,
-                disableSelection: true,
-                disableSave: true,
-                disableUndo: true,
-                text: `⚡ ${label} $${triggerPrice.toFixed(2)}`,
-                overrides: {
-                  linecolor: '#f97316',
-                  linewidth: 2,
-                  linestyle: 0, // 0 = solid
-                  showLabel: true,
-                  textcolor: '#f97316',
-                  fontsize: 12,
-                  bold: true,
-                  italic: false,
-                  horzLabelsAlign: 'right',
-                  vertLabelsAlign: 'top',
-                },
-              }
-            )
-          } catch (_) {
-            try {
-              chart.createOrderLine()
-                .setPrice(triggerPrice)
-                .setText(`⚡ ${label} $${triggerPrice.toFixed(2)}`)
-                .setQuantity('')
-                .setLineColor('#f97316')
-                .setBodyBackgroundColor('#f97316')
-                .setBodyTextColor('#ffffff')
-                .setBodyBorderColor('#f97316')
-                .setLineWidth(2)
-            } catch (__) { /* ignore */ }
-          }
+            chart.createOrderLine()
+              .setPrice(triggerPrice)
+              .setText(`⚡ ${label} $${triggerPrice.toFixed(2)}`)
+              .setQuantity('')
+              .setLineColor('#f97316')
+              .setBodyBackgroundColor('#f97316')
+              .setBodyTextColor('#ffffff')
+              .setBodyBorderColor('#f97316')
+              .setLineWidth(2)
+          } catch (_) { /* ignore */ }
         }
       })
     }
@@ -230,16 +172,11 @@ export function TradingViewWidget({
     addTimer(setTimeout(() => {
       const scriptId = 'tradingview-widget-script'
       const scriptEl = document.getElementById(scriptId) as HTMLScriptElement | null
-
       if (scriptEl) {
         if (window.TradingView) {
           createWidget()
         } else {
-          if ((scriptEl as any).readyState === 'loaded' || (scriptEl as any).readyState === 'complete') {
-            createWidget()
-          } else {
-            scriptEl.addEventListener('load', createWidget, { once: true })
-          }
+          scriptEl.addEventListener('load', createWidget, { once: true })
         }
       } else {
         const script = document.createElement('script')
