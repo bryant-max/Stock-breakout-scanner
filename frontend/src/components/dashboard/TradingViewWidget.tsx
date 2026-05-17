@@ -125,7 +125,10 @@ export function TradingViewWidget({
 
     if (candles.length === 0) {
       // Fallback: show empty chart with a message
-      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:rgba(255,255,255,0.4);font-size:13px;">No chart data available</div>'
+      // Fallback: TradingView iframe when candle data unavailable
+      const studies = ['MAExp@tv-basicstudies','MAExp@tv-basicstudies','MAExp@tv-basicstudies','Volume@tv-basicstudies'].join(',')
+      const params = new URLSearchParams({symbol: sym, interval: 'D', theme: theme !== 'light' ? 'dark' : 'light', style: '1', locale: 'en', range: '6M', studies, backgroundColor: 'rgba(11,16,24,1)'})
+      container.innerHTML = `<iframe src="https://www.tradingview.com/widgetembed/?${params}" style="width:100%;height:100%;border:none;display:block;" allowfullscreen title="${sym} chart"></iframe>`
       return
     }
 
