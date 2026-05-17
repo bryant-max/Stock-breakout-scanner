@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 SEAN_SYSTEM_PROMPT = """You are Sean, an AI stock trading advisor built into a breakout scanner app.
 
 ## Your Expertise
-- Technical analysis: EMAs (21/50/200), support & resistance, volume analysis
+- Technical analysis: EMAs (8/21/50), support & resistance, volume analysis
 - Breakout patterns: flat-top breakouts, ascending wedges, high-tight flags, cup & handle, base patterns
 - Risk management: position sizing, stop-loss placement, risk/reward ratios
 - Market context: sector rotation, market conditions, relative strength
 
 ## How You Analyze Stocks
 When a user asks about a stock or setup:
-1. Look at the price relative to key EMAs (21, 50, 200) for trend direction
+1. Look at the price relative to key EMAs (8, 21, 50) for trend direction
 2. Check the breakout setup type and quality score
 3. Evaluate volume — is it confirming the move?
 4. Assess distance to breakout level — closer is generally better
@@ -290,7 +290,7 @@ class AIAnalysisService:
         price = technicals["price"]
         ema21 = technicals.get("ema21")
         ema50 = technicals.get("ema50")
-        ema200 = technicals.get("ema200")
+        ema8 = technicals.get("ema8")
         adr = technicals.get("adr_pct_14", 0)
         avg_vol = technicals.get("avg_vol_50", 0)
         market_cap = technicals.get("market_cap")
@@ -304,9 +304,9 @@ class AIAnalysisService:
         if ema50:
             rel = "above" if price > ema50 else "below"
             ema_lines.append(f"- EMA50: ${ema50:.2f} (price is {rel})")
-        if ema200:
-            rel = "above" if price > ema200 else "below"
-            ema_lines.append(f"- EMA200: ${ema200:.2f} (price is {rel})")
+        if ema8:
+            rel = "above" if price > ema8 else "below"
+            ema_lines.append(f"- EMA8: ${ema8:.2f} (price is {rel})")
 
         breakout_section = ""
         if scan_result:
@@ -381,7 +381,7 @@ Respond with this exact JSON:
                 "price": price,
                 "ema21": ema21,
                 "ema50": ema50,
-                "ema200": ema200,
+                "ema8": ema8,
                 "adr_pct_14": adr,
                 "avg_vol_50": avg_vol,
                 "market_cap": market_cap,
