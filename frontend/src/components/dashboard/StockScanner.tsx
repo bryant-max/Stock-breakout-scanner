@@ -410,8 +410,8 @@ export function StockScanner() {
               </div>
               <div className="flex flex-col items-end gap-2">
                 <div className="text-right">
-                  <p className="text-xs text-white/40 mb-1">Opportunity Score</p>
-                  <p className={cn("text-5xl font-bold", scoreColor(symbolResult.opportunity_score))}>{symbolResult.opportunity_score}</p>
+                  <p className="text-xs text-white/40 mb-1">Setup Rating</p>
+                  <p className={cn("text-5xl font-bold", scoreColor(symbolResult.opportunity_score))}>{(symbolResult.opportunity_score/10).toFixed(1)}</p>
                   <p className="text-xs text-white/30 mt-1">Confidence {symbolResult.confidence}%</p>
                 </div>
                 <button
@@ -439,7 +439,7 @@ export function StockScanner() {
               {([
                 { label: "EMA 21", val: symbolResult.ema21 },
                 { label: "EMA 50", val: symbolResult.ema50 },
-                { label: "EMA 200", val: symbolResult.ema200 },
+                { label: "EMA 8", val: symbolResult.ema8 },
               ] as const).map(({ label, val }) => (
                 <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-4">
                   <p className="text-xs text-white/50 mb-1">{label}</p>
@@ -477,7 +477,7 @@ export function StockScanner() {
                 <div className="flex items-center gap-2 mb-3">
                   <Target className="h-4 w-4 text-emerald-400" />
                   <h4 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider">Breakout Setup — {symbolResult.setup_type}</h4>
-                  <span className="ml-auto text-2xl font-bold text-emerald-400">{symbolResult.breakout_score}/100</span>
+                  <span className="ml-auto text-2xl font-bold text-emerald-400">{(symbolResult.breakout_score/10).toFixed(1)}/10</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><p className="text-white/50 mb-0.5">Breakout Level</p><p className="font-bold text-white">${symbolResult.trigger_price.toFixed(2)}</p></div>
