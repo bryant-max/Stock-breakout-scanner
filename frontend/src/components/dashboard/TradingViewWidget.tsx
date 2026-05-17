@@ -38,6 +38,14 @@ const LEVEL_CONFIGS = [
 
 let widgetCounter = 0
 
+function setupLabel(setupType: string | null | undefined): string {
+  if (setupType === 'FLAT_TOP') return 'Flat Top Breakout'
+  if (setupType === 'WEDGE') return 'Wedge Breakout'
+  if (setupType === 'FLAG') return 'Flag Breakout'
+  if (setupType === 'BASE') return 'Base Breakout'
+  return 'Breakout Level'
+}
+
 export function TradingViewWidget({
   symbol,
   interval = 'D',
@@ -55,7 +63,6 @@ export function TradingViewWidget({
 }: TradingViewWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const containerId = useRef(`tv-chart-${++widgetCounter}`).current
-  // Track all pending timeouts so cleanup is complete
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const clearTimers = () => {
@@ -103,65 +110,123 @@ export function TradingViewWidget({
         const chart = widget.activeChart()
         const isShort = direction === 'Short'
 
-        // --- Trade levels (entry / stop / target) ---
+        // --- Trade levels (entry / stop / target) as order lines ---
         const levels = { entry, stop, target }
         for (const cfg of LEVEL_CONFIGS) {
           const price = levels[cfg.key]
           if (!price) continue
-          chart.createOrderLine()
-            .setPrice(price)
-            .setText(cfg.labelFn(price, isShort))
-            .setQuantity('')
-            .setLineColor(cfg.color)
-            .setBodyBackgroundColor(cfg.color)
-            .setBodyTextColor('#ffffff')
-            .setBodyBorderColor(cfg.color)
-            .setLineWidth(2)
-        }
-
-        // --- EMA lines as horizontal overlays ---
-        const emaLevels = [
-          { val: ema8,  color: '#f59e0b', label: 'EMA 8'  },
-          { val: ema21, color: '#818cf8', label: 'EMA 21' },
-          { val: ema50, color: '#38bdf8', label: 'EMA 50' },
-        ]
-        for (const e of emaLevels) {
-          if (!e.val) continue
           try {
             chart.createOrderLine()
-              .setPrice(e.val)
-              .setText(e.label + ' $' + e.val.toFixed(2))
+              .setPrice(price)
+              .setText(cfg.labelFn(price, isShort))
               .setQuantity('')
-              .setLineColor(e.color)
-              .setBodyBackgroundColor('rgba(0,0,0,0.7)')
-              .setBodyTextColor(e.color)
-              .setBodyBorderColor(e.color)
-              .setLineStyle(2)   // dashed
-              .setLineWidth(1)
-          } catch (_) { /* ignore if setLineStyle unsupported */ }
+              .setLineColor(cfg.color)
+              .setBodyBackgroundColor(cfg.color)
+              .setBodyTextColor('#ffffff')
+              .setBodyBorderColor(cfg.color)
+              .setLineWidth(2)
+          } catch (_) { /* ignore */ }
+        }
+
+        // --- EMA horizontal lines via createShape ---
+        const emaLines = [
+          { val: ema8,  color: '#f59e0b', label: 'EMA 8',  linewidth: 1 },
+          { val: ema21, color: '#818cf8', label: 'EMA 21', linewidth: 1 },
+          { val: ema50, color: '#38bdf8', label: 'EMA 50', linewidth: 2 },
+        ]
+        for (const e of emaLines) {
+          if (e.val == null) continue
+          try {
+            // createMultipointShape with 2 points far apart for a horizontal price line
+            chart.createMultipointShape(
+              [
+                { time: 0, price: e.val },
+                { time: 9999999999, price: e.val },
+              ],
+              {
+                shape: 'horizontal_line',
+                lock: true,
+                disableSelection: true,
+                disableSave: true,
+                disableUndo: true,
+                text: `${e.label} $${e.val.toFixed(2)}`,
+                overrides: {
+                  linecolor: e.color,
+                  linewidth: e.linewidth,
+                  linestyle: 1, // 1 = dashed
+                  showLabel: true,
+                  textcolor: e.color,
+                  fontsize: 11,
+                  bold: false,
+                  italic: false,
+                  horzLabelsAlign: 'right',
+                  vertLabelsAlign: 'bottom',
+                },
+              }
+            )
+          } catch (_) {
+            // Fallback: use order line if shape API unsupported
+            try {
+              chart.createOrderLine()
+                .setPrice(e.val)
+                .setText(`${e.label} $${e.val.toFixed(2)}`)
+                .setQuantity('')
+                .setLineColor(e.color)
+                .setBodyBackgroundColor('rgba(15,17,26,0.85)')
+                .setBodyTextColor(e.color)
+                .setBodyBorderColor(e.color)
+                .setLineWidth(1)
+            } catch (__) { /* ignore */ }
+          }
         }
 
         // --- Trigger / Breakout level ---
         if (triggerPrice) {
-          const setupLabel = setupType === 'FLAT_TOP' ? 'Flat Top Breakout'
-            : setupType === 'WEDGE' ? 'Wedge Breakout'
-            : setupType === 'FLAG' ? 'Flag Breakout'
-            : setupType === 'BASE' ? 'Base Breakout'
-            : 'Breakout Level'
-          chart.createOrderLine()
-            .setPrice(triggerPrice)
-            .setText(`⚡ ${setupLabel} $${triggerPrice.toFixed(2)}`)
-            .setQuantity('')
-            .setLineColor('#f97316')
-            .setBodyBackgroundColor('#f97316')
-            .setBodyTextColor('#ffffff')
-            .setBodyBorderColor('#f97316')
-            .setLineWidth(2)
+          const label = setupLabel(setupType)
+          try {
+            chart.createMultipointShape(
+              [
+                { time: 0, price: triggerPrice },
+                { time: 9999999999, price: triggerPrice },
+              ],
+              {
+                shape: 'horizontal_line',
+                lock: true,
+                disableSelection: true,
+                disableSave: true,
+                disableUndo: true,
+                text: `⚡ ${label} $${triggerPrice.toFixed(2)}`,
+                overrides: {
+                  linecolor: '#f97316',
+                  linewidth: 2,
+                  linestyle: 0, // 0 = solid
+                  showLabel: true,
+                  textcolor: '#f97316',
+                  fontsize: 12,
+                  bold: true,
+                  italic: false,
+                  horzLabelsAlign: 'right',
+                  vertLabelsAlign: 'top',
+                },
+              }
+            )
+          } catch (_) {
+            try {
+              chart.createOrderLine()
+                .setPrice(triggerPrice)
+                .setText(`⚡ ${label} $${triggerPrice.toFixed(2)}`)
+                .setQuantity('')
+                .setLineColor('#f97316')
+                .setBodyBackgroundColor('#f97316')
+                .setBodyTextColor('#ffffff')
+                .setBodyBorderColor('#f97316')
+                .setLineWidth(2)
+            } catch (__) { /* ignore */ }
+          }
         }
       })
     }
 
-    // Delay to ensure container is painted before widget measures it.
     addTimer(setTimeout(() => {
       const scriptId = 'tradingview-widget-script'
       const scriptEl = document.getElementById(scriptId) as HTMLScriptElement | null
