@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Wallet, Link2, TrendingUp, TrendingDown, DollarSign, RefreshCw, ExternalLink, Clock, ArrowUpRight, ArrowDownRight, Plus, FlaskConical, Zap } from "lucide-react"
+import { Wallet, Link2, TrendingUp, TrendingDown, DollarSign, RefreshCw, ExternalLink, Clock, ArrowUpRight, ArrowDownRight, Plus, FlaskConical, Zap, X } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,8 @@ async function paperFetch(path: string, opts?: RequestInit) {
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+type JournalEntry = { id: string; date: string; symbol: string; action: 'BUY' | 'SELL'; qty: number; price: number; notes: string; pnl: number | null }
 
 type PageTab = "live" | "paper" | "options"
 
@@ -48,6 +50,34 @@ export default function PortfolioPage() {
   const [optionsSymbol, setOptionsSymbol] = useState("AAPL")
   const [optionsPaper, setOptionsPaper] = useState(true)
   const [authorizations, setAuthorizations] = useState<SnapTradeAuthorization[]>([])
+
+  // Trade Journal (localStorage)
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem('tradeJournal') || '[]') } catch { return [] }
+  })
+  const [journalForm, setJournalForm] = useState({ symbol: '', action: 'BUY' as 'BUY' | 'SELL', qty: '', price: '', notes: '', pnl: '' })
+  const [showJournalForm, setShowJournalForm] = useState(false)
+  const saveJournal = (entries: JournalEntry[]) => {
+    setJournalEntries(entries)
+    localStorage.setItem('tradeJournal', JSON.stringify(entries))
+  }
+  const addJournalEntry = () => {
+    if (!journalForm.symbol || !journalForm.qty || !journalForm.price) return
+    const entry: JournalEntry = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      symbol: journalForm.symbol.toUpperCase(),
+      action: journalForm.action,
+      qty: Number(journalForm.qty),
+      price: Number(journalForm.price),
+      notes: journalForm.notes,
+      pnl: journalForm.pnl ? Number(journalForm.pnl) : null,
+    }
+    saveJournal([entry, ...journalEntries])
+    setJournalForm({ symbol: '', action: 'BUY', qty: '', price: '', notes: '', pnl: '' })
+    setShowJournalForm(false)
+  }
+  const deleteJournalEntry = (id: string) => saveJournal(journalEntries.filter(e => e.id !== id))
 
   const checkStatus = useCallback(async () => {
     try {
@@ -263,7 +293,7 @@ export default function PortfolioPage() {
                   <div className="grid grid-cols-4 gap-4">
                     <Card className="bg-white/2 border-white/10 p-6">
                       <p className="text-sm text-white/60 mb-2">Portfolio Value</p>
-                      <p className="text-3xl font-bold text-white">{'$'}{totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      <p className="text-3xl font-bold text-white">{'$'}{(totalVal + totalCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     </Card>
                     <Card className="bg-white/2 border-white/10 p-6">
                       <p className="text-sm text-white/60 mb-2">Open P&amp;L</p>
@@ -272,7 +302,7 @@ export default function PortfolioPage() {
                       </p>
                     </Card>
                     <Card className="bg-white/2 border-white/10 p-6">
-                      <p className="text-sm text-white/60 mb-2">Cash</p>
+                      <p className="text-sm text-white/60 mb-2">Buying Power</p>
                       <p className="text-3xl font-bold text-white">{'$'}{totalCash.toFixed(2)}</p>
                     </Card>
                     <Card className="bg-white/2 border-white/10 p-6">
@@ -339,6 +369,81 @@ export default function PortfolioPage() {
                       }
                     </div>
                   </div>
+
+                {/* Trade Journal */}
+                <Card className="bg-white/2 border-white/10 p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-purple-400" />
+                      <h2 className="text-lg font-semibold text-white">Trade Journal</h2>
+                      <span className="text-xs text-white/40 ml-1">{journalEntries.length} entries</span>
+                    </div>
+                    <Button size="sm" onClick={() => setShowJournalForm(s => !s)} className="bg-purple-600 hover:bg-purple-500 text-white h-8 px-3 text-xs">
+                      <Plus className="h-3.5 w-3.5 mr-1" />{showJournalForm ? 'Cancel' : 'Log Trade'}
+                    </Button>
+                  </div>
+
+                  {showJournalForm && (
+                    <div className="bg-white/3 border border-white/10 rounded-xl p-4 mb-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-white/50 block mb-1">Symbol</label>
+                          <input value={journalForm.symbol} onChange={e => setJournalForm(f => ({...f, symbol: e.target.value.toUpperCase()}))} placeholder="AAPL" className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded px-3 py-1.5 focus:border-purple-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/50 block mb-1">Action</label>
+                          <div className="flex border border-zinc-700 rounded overflow-hidden">
+                            {(['BUY', 'SELL'] as const).map(a => (
+                              <button key={a} onClick={() => setJournalForm(f => ({...f, action: a}))} className={cn("flex-1 py-1.5 text-xs font-medium transition-colors", journalForm.action === a ? (a === 'BUY' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white') : 'text-zinc-400 hover:text-white bg-zinc-800')}>{a}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/50 block mb-1">Quantity</label>
+                          <input type="number" value={journalForm.qty} onChange={e => setJournalForm(f => ({...f, qty: e.target.value}))} placeholder="100" className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded px-3 py-1.5 focus:border-purple-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/50 block mb-1">Price</label>
+                          <input type="number" value={journalForm.price} onChange={e => setJournalForm(f => ({...f, price: e.target.value}))} placeholder="0.00" className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded px-3 py-1.5 focus:border-purple-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/50 block mb-1">P&amp;L (optional)</label>
+                          <input type="number" value={journalForm.pnl} onChange={e => setJournalForm(f => ({...f, pnl: e.target.value}))} placeholder="±0.00" className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded px-3 py-1.5 focus:border-purple-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/50 block mb-1">Notes</label>
+                          <input value={journalForm.notes} onChange={e => setJournalForm(f => ({...f, notes: e.target.value}))} placeholder="Setup, reason..." className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded px-3 py-1.5 focus:border-purple-500 focus:outline-none" />
+                        </div>
+                      </div>
+                      <Button onClick={addJournalEntry} disabled={!journalForm.symbol || !journalForm.qty || !journalForm.price} className="w-full bg-purple-600 hover:bg-purple-500 text-white text-sm h-9">Log Trade</Button>
+                    </div>
+                  )}
+
+                  {journalEntries.length === 0 ? (
+                    <div className="text-center py-8 text-white/30 text-sm">No trades logged yet. Click "Log Trade" to start tracking.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {journalEntries.map(entry => (
+                        <div key={entry.id} className="flex items-center justify-between px-4 py-3 bg-white/3 border border-white/8 rounded-xl group">
+                          <div className="flex items-center gap-3">
+                            <Badge className={cn("text-xs font-bold border", entry.action === 'BUY' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30')}>{entry.action}</Badge>
+                            <div>
+                              <p className="text-sm font-bold text-white">{entry.symbol}</p>
+                              <p className="text-xs text-white/40">{entry.qty}sh @ {'$'}{entry.price.toFixed(2)} · {new Date(entry.date).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {entry.notes && <p className="text-xs text-white/40 max-w-32 truncate hidden sm:block">{entry.notes}</p>}
+                            {entry.pnl !== null && (
+                              <p className={cn("text-sm font-bold", entry.pnl >= 0 ? 'text-emerald-400' : 'text-red-400')}>{entry.pnl >= 0 ? '+' : ''}{'$'}{entry.pnl.toFixed(2)}</p>
+                            )}
+                            <button onClick={() => deleteJournalEntry(entry.id)} className="p-1.5 rounded hover:bg-red-500/10 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
                 </>
               )}
             </>
