@@ -252,7 +252,7 @@ export default function AdminDashboardPage() {
                     <DollarSign className="h-4 w-4 text-emerald-400" />
                   </div>
                   <p className="text-3xl font-bold text-white">
-                    ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${(totalValue + totalCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                   <p className="text-xs text-white/40 mt-2">{allPositions.length} open positions</p>
                 </Card>
@@ -272,7 +272,7 @@ export default function AdminDashboardPage() {
 
                 <Card className="bg-white/2 border-white/10 shadow-xl p-6">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-white/60">Cash Available</p>
+                    <p className="text-sm text-white/60">Buying Power</p>
                     <DollarSign className="h-4 w-4 text-blue-400" />
                   </div>
                   <p className="text-3xl font-bold text-white">
