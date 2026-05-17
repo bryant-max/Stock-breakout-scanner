@@ -10,17 +10,17 @@ from patterns.volume import volume_quality
 from scoring.breakout_score import score_breakout, is_actionable
 
 def avg_volume(candles: List[Candle], period: int) -> float:
-        """Calculate average volume over period."""
-        slice_candles = candles[-period:] if len(candles) >= period else candles
-        if not slice_candles:
-                    return 0.0
-                return sum(c.v for c in slice_candles) / len(slice_candles)
+    """Calculate average volume over period."""
+    slice_candles = candles[-period:] if len(candles) >= period else candles
+    if not slice_candles:
+        return 0.0
+    return sum(c.v for c in slice_candles) / len(slice_candles)
 
 def scan_one(symbol: str, candles: List[Candle]) -> Optional[ScanResult]:
-        """Scan a single ticker and return result if actionable."""
+    """Scan a single ticker and return result if actionable."""
     # Need enough history for EMA50 + base detection
     if len(candles) < 120:
-                return None
+        return None
 
     closes = [c.c for c in candles]
 
@@ -36,17 +36,17 @@ def scan_one(symbol: str, candles: List[Candle]) -> Optional[ScanResult]:
 
     # HARD FILTER 1: Above key EMAs (trend alignment)
     if not (price > ema8 and price > ema21 and price > ema50):
-                return None
+        return None
 
     # HARD FILTER 2: Volume (liquidity)
     avg_vol_50 = avg_volume(candles, 50)
     if avg_vol_50 < 1_000_000:
-                return None
+        return None
 
     # HARD FILTER 3: ADR% (movement potential)
     adr14 = adr_pct(candles, 14)
     if adr14 < 2.0:
-                return None
+        return None
 
     # PATTERNS
     base = is_tight_base(candles, 120)
@@ -56,48 +56,48 @@ def scan_one(symbol: str, candles: List[Candle]) -> Optional[ScanResult]:
     # TRIGGER PRICE
     trigger_info = pick_trigger_price(candles)
     if not trigger_info["trigger"]:
-                return None
+        return None
 
     trigger_price = trigger_info["trigger"]
     distance_pct = ((trigger_price - price) / price) * 100
 
     # HARD FILTER 4: Actionable distance
     if not is_actionable(abs(distance_pct)):
-                return None
+        return None
 
     # SCORING
     score_result = score_breakout(
-                {
-                                "tight_base": base.ok,
-                                "range_pct": base.range_pct,
-                                "atr_down": base.atr_down,
-                                "higher_lows": wedge.ok,
-                                "flat_top_touches": trigger_info["cluster_touches"],
-                                "distance_pct": abs(distance_pct),
-                                "volume_ok": vol.ok,
-                }
+        {
+            "tight_base": base.ok,
+            "range_pct": base.range_pct,
+            "atr_down": base.atr_down,
+            "higher_lows": wedge.ok,
+            "flat_top_touches": trigger_info["cluster_touches"],
+            "distance_pct": abs(distance_pct),
+            "volume_ok": vol.ok,
+        }
     )
 
     # Setup type
     setup_type = "UNKNOWN"
     if trigger_info["cluster_touches"] >= 3:
-                setup_type = "FLAT_TOP"
-elif wedge.ok:
+        setup_type = "FLAT_TOP"
+    elif wedge.ok:
         setup_type = "WEDGE"
-elif base.ok:
+    elif base.ok:
         setup_type = "BASE"
 
     return ScanResult(
-                symbol=symbol,
-                price=price,
-                trigger_price=trigger_price,
-                distance_pct=abs(distance_pct),
-                adr_pct_14=adr14,
-                ema8=ema8,
-                ema21=ema21,
-                ema50=ema50,
-                avg_vol_50=avg_vol_50,
-                setup_type=setup_type,
-                breakout_score=score_result["score"],
-                notes=score_result["notes"],
+        symbol=symbol,
+        price=price,
+        trigger_price=trigger_price,
+        distance_pct=abs(distance_pct),
+        adr_pct_14=adr14,
+        ema8=ema8,
+        ema21=ema21,
+        ema50=ema50,
+        avg_vol_50=avg_vol_50,
+        setup_type=setup_type,
+        breakout_score=score_result["score"],
+        notes=score_result["notes"],
     )
