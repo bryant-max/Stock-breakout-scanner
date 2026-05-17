@@ -38,11 +38,11 @@ const LEVEL_CONFIGS = [
 
 let widgetCounter = 0
 
-function setupLabel(setupType: string | null | undefined): string {
-  if (setupType === 'FLAT_TOP') return 'Flat Top Breakout'
-  if (setupType === 'WEDGE') return 'Wedge Breakout'
-  if (setupType === 'FLAG') return 'Flag Breakout'
-  if (setupType === 'BASE') return 'Base Breakout'
+function setupLabel(t: string | null | undefined): string {
+  if (t === 'FLAT_TOP') return 'Flat Top Breakout'
+  if (t === 'WEDGE')    return 'Wedge Breakout'
+  if (t === 'FLAG')     return 'Flag Breakout'
+  if (t === 'BASE')     return 'Base Breakout'
   return 'Breakout Level'
 }
 
@@ -62,70 +62,41 @@ export function TradingViewWidget({
   setupType,
 }: TradingViewWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const containerId = useRef(`tv-chart-${++widgetCounter}`).current
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const containerId  = useRef(`tv-chart-${++widgetCounter}`).current
+  const timersRef    = useRef<ReturnType<typeof setTimeout>[]>([])
 
-  const clearTimers = () => {
-    timersRef.current.forEach(clearTimeout)
-    timersRef.current = []
-  }
-  const addTimer = (t: ReturnType<typeof setTimeout>) => {
-    timersRef.current.push(t)
-  }
+  const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = [] }
+  const addTimer    = (t: ReturnType<typeof setTimeout>) => { timersRef.current.push(t) }
 
   useEffect(() => {
-    let mounted = true
+    let mounted  = true
     const container = containerRef.current
     if (!container) return
 
     const tvSymbol = sanitizeSymbol(symbol)
-    const isShort = direction === 'Short'
+    const isShort  = direction === 'Short'
 
     const createWidget = () => {
       if (!mounted || !window.TradingView || !container) return
       container.innerHTML = ''
 
-      // EMA studies baked into the widget config — these work with the free tv.js widget
-      // The widget renders them as actual EMA lines on the candle chart
-      const studies = [
-        'Volume@tv-basicstudies',
-        // EMA 8 — amber
-        JSON.stringify({
-          id: 'MAExp@tv-basicstudies',
-          inputs: { length: 8 },
-          styles: { plot_0: { linewidth: 1, plottype: 0, color: '#f59e0b', transparency: 0 } },
-        }),
-        // EMA 21 — indigo
-        JSON.stringify({
-          id: 'MAExp@tv-basicstudies',
-          inputs: { length: 21 },
-          styles: { plot_0: { linewidth: 1, plottype: 0, color: '#818cf8', transparency: 0 } },
-        }),
-        // EMA 50 — sky
-        JSON.stringify({
-          id: 'MAExp@tv-basicstudies',
-          inputs: { length: 50 },
-          styles: { plot_0: { linewidth: 2, plottype: 0, color: '#38bdf8', transparency: 0 } },
-        }),
-      ]
-
       const widget = new window.TradingView.widget({
         container_id: containerId,
-        width: container.offsetWidth || 800,
+        width:   container.offsetWidth || 800,
         height,
-        symbol: tvSymbol,
+        symbol:  tvSymbol,
         interval: 'D',
-        theme: theme === 'light' ? 'light' : 'dark',
+        theme:   theme === 'light' ? 'light' : 'dark',
         timezone: 'Etc/UTC',
-        style: '1',
-        locale: 'en',
+        style:   '1',
+        locale:  'en',
         toolbar_bg: '#0B1018',
-        enable_publishing: false,
+        enable_publishing:  false,
         allow_symbol_change: false,
-        hide_side_toolbar: true,
+        hide_side_toolbar:  true,
         withdateranges: true,
         range: '6M',
-        studies,
+        studies: ['Volume@tv-basicstudies'],
         support_host: 'https://www.tradingview.com',
       })
 
@@ -133,7 +104,30 @@ export function TradingViewWidget({
         if (!mounted) return
         const chart = widget.activeChart()
 
-        // --- Trade levels (entry / stop / target) as order lines ---
+        // ── EMA studies via createStudy (supports custom colors in free widget) ──
+        // Signature: createStudy(name, forceOverlay, lock, inputs, overrides, options)
+        const emaStudies = [
+          { length: 8,  color: '#f59e0b', width: 1 },  // amber  — EMA 8
+          { length: 21, color: '#818cf8', width: 1 },  // indigo — EMA 21
+          { length: 50, color: '#38bdf8', width: 2 },  // sky    — EMA 50
+        ]
+        for (const e of emaStudies) {
+          try {
+            chart.createStudy(
+              'Moving Average Exponential',
+              false,   // forceOverlay — false puts it on the main pane
+              false,   // lock
+              [e.length],   // inputs array: [length]
+              {
+                'Plot.color':     e.color,
+                'Plot.linewidth': e.width,
+                'Plot.plottype':  'line',
+              }
+            )
+          } catch (_) { /* ignore if API not available */ }
+        }
+
+        // ── Trade level order lines (entry / stop / target) ──
         const levels = { entry, stop, target }
         for (const cfg of LEVEL_CONFIGS) {
           const price = levels[cfg.key]
@@ -151,13 +145,12 @@ export function TradingViewWidget({
           } catch (_) { /* ignore */ }
         }
 
-        // --- Trigger / Breakout level as order line ---
+        // ── Breakout trigger level ──
         if (triggerPrice) {
-          const label = setupLabel(setupType)
           try {
             chart.createOrderLine()
               .setPrice(triggerPrice)
-              .setText(`⚡ ${label} $${triggerPrice.toFixed(2)}`)
+              .setText(`⚡ ${setupLabel(setupType)} $${triggerPrice.toFixed(2)}`)
               .setQuantity('')
               .setLineColor('#f97316')
               .setBodyBackgroundColor('#f97316')
@@ -171,29 +164,23 @@ export function TradingViewWidget({
 
     addTimer(setTimeout(() => {
       const scriptId = 'tradingview-widget-script'
-      const scriptEl = document.getElementById(scriptId) as HTMLScriptElement | null
-      if (scriptEl) {
-        if (window.TradingView) {
-          createWidget()
-        } else {
-          scriptEl.addEventListener('load', createWidget, { once: true })
-        }
+      const existing = document.getElementById(scriptId) as HTMLScriptElement | null
+      if (existing) {
+        window.TradingView ? createWidget() : existing.addEventListener('load', createWidget, { once: true })
       } else {
-        const script = document.createElement('script')
-        script.id = scriptId
-        script.src = 'https://s3.tradingview.com/tv.js'
-        script.async = true
-        script.onload = createWidget
-        document.head.appendChild(script)
+        const s = document.createElement('script')
+        s.id    = scriptId
+        s.src   = 'https://s3.tradingview.com/tv.js'
+        s.async = true
+        s.onload = createWidget
+        document.head.appendChild(s)
       }
     }, 150))
 
     return () => {
       mounted = false
       clearTimers()
-      addTimer(setTimeout(() => {
-        if (container) container.innerHTML = ''
-      }, 0))
+      addTimer(setTimeout(() => { if (container) container.innerHTML = '' }, 0))
     }
   }, [symbol, interval, theme, containerId, height, entry, stop, target, direction, ema8, ema21, ema50, triggerPrice, setupType])
 
