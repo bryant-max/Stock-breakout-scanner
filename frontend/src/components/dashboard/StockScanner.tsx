@@ -325,7 +325,7 @@ export function StockScanner() {
         <Card className="relative overflow-hidden bg-linear-to-br from-white/7 to-white/2 border-white/10 backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500">
           <div className="absolute inset-0 bg-linear-to-br from-emerald-500/5 via-transparent to-primary/5 pointer-events-none" />
           <div className="relative p-8 space-y-8">
-            <div className="rounded-xl overflow-hidden bg-black/60 border border-white/10 h-[420px]">
+            <div className="w-full">
               <TradingViewWidget
                 symbol={symbolResult.symbol}
                 interval="D"
