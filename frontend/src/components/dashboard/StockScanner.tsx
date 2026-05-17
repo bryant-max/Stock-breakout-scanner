@@ -335,6 +335,11 @@ export function StockScanner() {
                 stop={symbolResult.suggested_stop}
                 target={symbolResult.suggested_target}
                 direction={symbolResult.direction as 'Long' | 'Short' | null}
+                ema8={symbolResult.ema8}
+                ema21={symbolResult.ema21}
+                ema50={symbolResult.ema50}
+                triggerPrice={symbolResult.trigger_price}
+                setupType={symbolResult.setup_type}
               />
             </div>
 
