@@ -1,9 +1,8 @@
 from typing import List, Literal, Optional
 from pydantic import BaseModel
 
-
 class Candle(BaseModel):
-    t: int  # unix ms
+        t: int  # unix ms
     o: float
     h: float
     l: float
@@ -12,17 +11,18 @@ class Candle(BaseModel):
 
 
 class ScanResult(BaseModel):
-    symbol: str
-    price: float
+        symbol: str
+        price: float
 
     trigger_price: float  # breakout level
     distance_pct: float  # how close to trigger
 
     adr_pct_14: float  # average daily range %
 
+    ema8: Optional[float] = None
     ema21: float
     ema50: float
-    ema200: float
+    ema200: Optional[float] = None
 
     avg_vol_50: float
     market_cap: Optional[float] = None
