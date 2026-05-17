@@ -430,30 +430,35 @@ export function StockScanner() {
               </div>
             </div>
 
-            {/* Price + EMA */}
-            <div className="grid grid-cols-4 gap-3">
-              <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                <p className="text-xs text-white/50 mb-1">Price</p>
-                <p className="text-xl font-bold text-white">${symbolResult.price.toFixed(2)}</p>
-              </div>
-              {([
-                { label: "EMA 21", val: symbolResult.ema21 },
-                { label: "EMA 50", val: symbolResult.ema50 },
-                { label: "EMA 8", val: symbolResult.ema8 },
-              ] as const).map(({ label, val }) => (
-                <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-4">
-                  <p className="text-xs text-white/50 mb-1">{label}</p>
-                  {val !== null ? (
-                    <div>
-                      <p className="text-xl font-bold text-white">${val.toFixed(2)}</p>
-                      <div>{emaStatus(symbolResult.price, val)}</div>
-                    </div>
-                  ) : <p className="text-white/30 text-sm">N/A</p>}
+            {/* Price + EMA Alignment */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/50 mb-1">Price</p>
+                  <p className="text-xl font-bold text-white">${symbolResult.price.toFixed(2)}</p>
                 </div>
-              ))}
-            </div>
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/50 mb-2">EMA Alignment</p>
+                  <div className="space-y-1.5">
+                    {([
+                      { label: "EMA 8", val: symbolResult.ema8 },
+                      { label: "EMA 21", val: symbolResult.ema21 },
+                      { label: "EMA 50", val: symbolResult.ema50 },
+                    ] as const).map(({ label, val }) => (
+                      <div key={label} className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">{label}</span>
+                        {val !== null && val !== undefined ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-white font-medium">${val.toFixed(2)}</span>
+                            {emaStatus(symbolResult.price, val)}
+                          </span>
+                        ) : <span className="text-white/30">N/A</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-            {/* Stats */}
+              {/* Stats */}
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-white/50 mb-1">ADR (14-day)</p>
@@ -471,7 +476,55 @@ export function StockScanner() {
               </div>
             </div>
 
-            {/* Breakout setup */}
+            {/* Technical Analysis */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  <h4 className="text-sm font-semibold text-white/80 uppercase tracking-wider">Technical Analysis</h4>
+                  <span className="ml-auto text-xs text-white/40">{symbolResult.setup_type ?? "UNKNOWN"}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <p className="text-xs text-white/40 mb-1">Trend Structure</p>
+                    <p className={cn("font-semibold", symbolResult.direction === "Long" ? "text-emerald-400" : symbolResult.direction === "Short" ? "text-red-400" : "text-white/60")}>
+                      {symbolResult.trend}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <p className="text-xs text-white/40 mb-1">EMA Stack</p>
+                    <p className={cn("font-semibold text-xs leading-relaxed", symbolResult.direction === "Long" ? "text-emerald-400" : "text-red-400")}>
+                      {symbolResult.price > (symbolResult.ema8 ?? 0) && symbolResult.price > (symbolResult.ema21 ?? 0) && symbolResult.price > (symbolResult.ema50 ?? 0)
+                        ? "Price above all EMAs ✓"
+                        : symbolResult.price < (symbolResult.ema8 ?? Infinity) && symbolResult.price < (symbolResult.ema21 ?? Infinity) && symbolResult.price < (symbolResult.ema50 ?? Infinity)
+                        ? "Price below all EMAs ✗"
+                        : "Mixed EMA structure"}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <p className="text-xs text-white/40 mb-1">Setup Pattern</p>
+                    <p className="font-semibold text-white">
+                      {symbolResult.setup_type === "FLAT_TOP" ? "Flat Top Breakout"
+                        : symbolResult.setup_type === "WEDGE" ? "Wedge Pattern"
+                        : symbolResult.setup_type === "FLAG" ? "Bull/Bear Flag"
+                        : symbolResult.setup_type === "BASE" ? "Consolidation Base"
+                        : "No Clear Pattern"}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <p className="text-xs text-white/40 mb-1">Volatility (ADR)</p>
+                    <p className={cn("font-semibold", symbolResult.adr_pct_14 >= 5 ? "text-emerald-400" : symbolResult.adr_pct_14 >= 2 ? "text-yellow-400" : "text-white/60")}>
+                      {symbolResult.adr_pct_14.toFixed(2)}% {symbolResult.adr_pct_14 >= 5 ? "— High mover" : symbolResult.adr_pct_14 >= 2 ? "— Moderate" : "— Low range"}
+                    </p>
+                  </div>
+                </div>
+                {symbolResult.passes_breakout_filter && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-xs text-emerald-400 font-medium flex items-center gap-2">
+                    <span>✓</span> Passes breakout filter — watching for volume confirmation above trigger
+                  </div>
+                )}
+              </div>
+
+              {/* Breakout setup */}
             {symbolResult.passes_breakout_filter && symbolResult.trigger_price && (
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-3">
