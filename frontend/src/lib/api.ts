@@ -20,9 +20,10 @@ export interface ScanResult {
   trigger_price: number
   distance_pct: number
   adr_pct_14: number
+  ema8?: number
   ema21: number
   ema50: number
-  ema200: number
+  ema200?: number
   avg_vol_50: number
   market_cap?: number
   setup_type: "FLAT_TOP" | "WEDGE" | "FLAG" | "BASE" | "UNKNOWN"
@@ -40,9 +41,10 @@ export interface AIAnalyzeResponse {
 export interface AISymbolAnalysis {
   symbol: string
   price: number
+  ema8?: number | null
   ema21: number | null
   ema50: number | null
-  ema200: number | null
+  ema200?: number | null
   adr_pct_14: number
   avg_vol_50: number
   market_cap: number | null
@@ -889,9 +891,10 @@ export interface LastScan {
   trigger_price: number
   distance_pct: number
   adr_pct_14: number
+  ema8?: number
   ema21: number
   ema50: number
-  ema200: number
+  ema200?: number
   avg_vol_50: number
   market_cap?: number
   setup_type: string
