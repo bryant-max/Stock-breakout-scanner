@@ -9,7 +9,6 @@ class Candle(BaseModel):
     c: float
     v: float
 
-
 class ScanResult(BaseModel):
     symbol: str
     price: float
