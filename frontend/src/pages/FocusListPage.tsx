@@ -376,7 +376,7 @@ function DetailPanel({
                 {aiResult.direction === "Long" ? <TrendingUp className="h-3.5 w-3.5 mr-1 inline" /> : aiResult.direction === "Short" ? <TrendingDown className="h-3.5 w-3.5 mr-1 inline" /> : <Minus className="h-3.5 w-3.5 mr-1 inline" />}
                 {aiResult.direction ?? "Neutral"}
               </Badge>
-              <span className={cn("text-3xl font-bold", scoreColor(aiResult.opportunity_score))}>{aiResult.opportunity_score}</span>
+              <span className={cn("text-3xl font-bold", scoreColor(aiResult.opportunity_score))}>{(aiResult.opportunity_score/10).toFixed(1)}</span>
               <span className="text-xs text-white/40">Confidence {aiResult.confidence}%</span>
             </div>
             <p className="text-sm text-white/70 leading-relaxed">{aiResult.analysis}</p>
@@ -417,7 +417,7 @@ function DetailPanel({
               <Badge className="bg-white/10 border border-white/20 text-white/60 text-xs">
                 {lastScan.setup_type.replace("_", " ")}
               </Badge>
-              <span className={cn("text-2xl font-bold", scoreColor(lastScan.breakout_score))}>{lastScan.breakout_score}</span>
+              <span className={cn("text-2xl font-bold", scoreColor(lastScan.breakout_score))}>{(lastScan.breakout_score/10).toFixed(1)}</span>
               <span className="text-xs text-white/30">Score · {new Date(lastScan.scanned_at).toLocaleDateString()}</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -450,7 +450,7 @@ function DetailPanel({
           <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Price vs EMAs</h4>
           <EmaRow label="vs EMA 21" ema={lastScan.ema21} price={lastScan.price} color="text-cyan-300" />
           <EmaRow label="vs EMA 50" ema={lastScan.ema50} price={lastScan.price} color="text-yellow-300" />
-          <EmaRow label="vs EMA 200" ema={lastScan.ema200} price={lastScan.price} color="text-purple-300" />
+          {lastScan.ema8 && <EmaRow label="vs EMA 8" ema={lastScan.ema8} price={lastScan.price} color="text-blue-300" />}
         </div>
       )}
 
