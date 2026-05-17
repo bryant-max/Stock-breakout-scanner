@@ -530,7 +530,7 @@ export function StockScanner() {
                 <div className="flex items-center gap-2 mb-3">
                   <Target className="h-4 w-4 text-emerald-400" />
                   <h4 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider">Breakout Setup — {symbolResult.setup_type}</h4>
-                  <span className="ml-auto text-2xl font-bold text-emerald-400">{(symbolResult.breakout_score/10).toFixed(1)}/10</span>
+                  <span className="ml-auto text-2xl font-bold text-emerald-400">{((symbolResult.breakout_score ?? 0)/10).toFixed(1)}/10</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><p className="text-white/50 mb-0.5">Breakout Level</p><p className="font-bold text-white">${symbolResult.trigger_price.toFixed(2)}</p></div>
