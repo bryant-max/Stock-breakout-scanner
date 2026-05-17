@@ -2,7 +2,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 class Candle(BaseModel):
-        t: int  # unix ms
+    t: int  # unix ms
     o: float
     h: float
     l: float
@@ -11,8 +11,8 @@ class Candle(BaseModel):
 
 
 class ScanResult(BaseModel):
-        symbol: str
-        price: float
+    symbol: str
+    price: float
 
     trigger_price: float  # breakout level
     distance_pct: float  # how close to trigger
