@@ -23,17 +23,17 @@ type TradingViewWidgetProps = {
   setupType?: string | null
 }
 
-// Timeframe definitions — number of trading days to show in visible range
-// These mirror TradingView's bottom bar: 1M 3M 6M 1Y
-// Default on load: 1M (last 22 trading days — gives a clear multi-candle view)
-const TIMEFRAMES = [
-  { label: '1M',  bars: 22  },
-  { label: '3M',  bars: 66  },
-  { label: '6M',  bars: 132 },
-  { label: '1Y',  bars: 252 },
-  { label: 'ALL', bars: 9999 },
+// Interval definitions — each has a label, backend interval key, and period to fetch
+const INTERVALS = [
+  { label: '5m',  interval: '5m',  period: '5d',   timeVisible: true  },
+  { label: '15m', interval: '15m', period: '10d',  timeVisible: true  },
+  { label: '30m', interval: '30m', period: '14d',  timeVisible: true  },
+  { label: '1h',  interval: '1h',  period: '1mo',  timeVisible: true  },
+  { label: '2h',  interval: '2h',  period: '1mo',  timeVisible: true  },
+  { label: '4h',  interval: '4h',  period: '3mo',  timeVisible: true  },
+  { label: '1D',  interval: '1d',  period: '1y',   timeVisible: false },
 ] as const
-type TFLabel = typeof TIMEFRAMES[number]['label']
+type IVLabel = typeof INTERVALS[number]['label']
 
 function sanitizeSymbol(raw: string): string {
   return raw.trim().toUpperCase().replace(/[^A-Z0-9.:]/g, '') || 'SPY'
@@ -41,9 +41,9 @@ function sanitizeSymbol(raw: string): string {
 
 function setupLabel(t: string | null | undefined): string {
   if (t === 'FLAT_TOP') return 'Flat Top Breakout'
-  if (t === 'WEDGE')    return 'Wedge Breakout'
-  if (t === 'FLAG')     return 'Flag Breakout'
-  if (t === 'BASE')     return 'Base Breakout'
+  if (t === 'WEDGE') return 'Wedge Breakout'
+  if (t === 'FLAG') return 'Flag Breakout'
+  if (t === 'BASE') return 'Base Breakout'
   return 'Breakout Level'
 }
 
@@ -68,35 +68,18 @@ export function TradingViewWidget({
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<any>(null)
   const cleanupRef = useRef<() => void>(() => {})
-  const candlesRef = useRef<{ time: number; open: number; high: number; low: number; close: number; volume: number }[]>([])
-  const [activeTF, setActiveTF] = useState<TFLabel>('1M')
+  const [activeIV, setActiveIV] = useState<IVLabel>('1D')
+  const [isLoading, setIsLoading] = useState(false)
 
-  // Apply a visible range on the chart based on bars count
-  const applyRange = useCallback((bars: number) => {
-    const chart = chartRef.current
-    const candles = candlesRef.current
-    if (!chart || candles.length === 0) return
-
-    if (bars >= 9999) {
-      // ALL: fit all data
-      chart.timeScale().fitContent()
-      return
-    }
-
-    const displayBars = Math.min(bars, candles.length)
-    // 10% right margin so latest candle has breathing room
-    const marginBars = Math.max(2, Math.ceil(displayBars * 0.08))
-    const fromIdx = Math.max(0, candles.length - displayBars)
-    const from = candles[fromIdx].time
-    const dayMs = 86400
-    const to = candles[candles.length - 1].time + dayMs * marginBars
-    chart.timeScale().setVisibleRange({ from, to })
-  }, [])
-
-  const buildChart = useCallback(async () => {
+  const buildChart = useCallback(async (ivLabel: IVLabel) => {
     const container = containerRef.current
     if (!container || !window.LightweightCharts) return
 
+    const ivDef = INTERVALS.find(i => i.label === ivLabel) ?? INTERVALS[INTERVALS.length - 1]
+
+    setIsLoading(true)
+
+    // Destroy previous chart
     cleanupRef.current()
     container.innerHTML = ''
 
@@ -120,14 +103,12 @@ export function TradingViewWidget({
       rightPriceScale: { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
       timeScale: {
         borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-        timeVisible: false,
+        timeVisible: ivDef.timeVisible,
         secondsVisible: false,
-        // Allow user to scroll/zoom freely like TradingView
         rightOffset: 3,
-        barSpacing: 8,
+        barSpacing: ivDef.interval === '1d' ? 8 : 6,
         minBarSpacing: 1,
       },
-      // Full pan and zoom support — user can drag/scroll anywhere
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     })
@@ -139,25 +120,24 @@ export function TradingViewWidget({
     ro.observe(container)
     cleanupRef.current = () => { chart.remove(); ro.disconnect() }
 
-    // Fetch OHLCV candles (1y of daily data)
-    let candles: typeof candlesRef.current = []
+    // Fetch OHLCV candles for selected interval/period
+    let candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[] = []
     try {
-      const res = await fetch(`${API_BASE}/api/chart/candles/${sym}?period=1y&interval=1d`)
+      const res = await fetch(`${API_BASE}/api/chart/candles/${sym}?period=${ivDef.period}&interval=${ivDef.interval}`)
       if (res.ok) {
         const data = await res.json()
         candles = data.candles || []
       }
     } catch (_) {}
 
+    setIsLoading(false)
+
     if (candles.length === 0) {
-      // Fallback: TradingView iframe
-      const studies = ['MAExp@tv-basicstudies','MAExp@tv-basicstudies','MAExp@tv-basicstudies','Volume@tv-basicstudies'].join(',')
-      const params = new URLSearchParams({ symbol: sym, interval: 'D', theme: isDark ? 'dark' : 'light', style: '1', locale: 'en', range: '3M', studies, backgroundColor: 'rgba(11,16,24,1)' })
+      // Fallback: TradingView iframe (daily only)
+      const params = new URLSearchParams({ symbol: sym, interval: 'D', theme: isDark ? 'dark' : 'light', style: '1', locale: 'en', range: '3M', backgroundColor: 'rgba(11,16,24,1)' })
       container.innerHTML = `<iframe src="https://www.tradingview.com/widgetembed/?${params}" style="width:100%;height:100%;border:none;display:block;" allowfullscreen title="${sym} chart"></iframe>`
       return
     }
-
-    candlesRef.current = candles
 
     // Candlestick series
     const candleSeries = chart.addCandlestickSeries({
@@ -177,7 +157,7 @@ export function TradingViewWidget({
       color: c.close >= c.open ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)',
     })))
 
-    // EMA lines
+    // EMA lines — always shown on all timeframes
     const closes = candles.map(c => c.close)
     const times = candles.map(c => c.time)
     const addEMASeries = (period: number, color: string) => {
@@ -185,71 +165,93 @@ export function TradingViewWidget({
       const series = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, title: `EMA ${period}` })
       series.setData(vals.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)))
     }
-    addEMASeries(8, '#f59e0b')
-    addEMASeries(21, '#818cf8')
-    addEMASeries(50, '#38bdf8')
+    addEMASeries(8, '#f59e0b')   // amber
+    addEMASeries(21, '#818cf8')  // indigo
+    addEMASeries(50, '#38bdf8')  // sky
 
-    // Native price lines (move with zoom/pan — stay attached to chart canvas)
+    // Price lines (entry, stop, target, breakout) — shown on all timeframes
     const LS = LW.LineStyle
     const addLine = (price: number, color: string, title: string, style: number) =>
       candleSeries.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })
     if (entry != null)        addLine(entry,        '#06b6d4', direction === 'Short' ? 'Short Entry' : 'Buy Entry', LS?.Dashed ?? 1)
     if (stop != null)         addLine(stop,         '#ef4444', 'Stop Loss',                                         LS?.Dashed ?? 1)
     if (target != null)       addLine(target,       '#10b981', 'Target',                                            LS?.Dashed ?? 1)
-    if (triggerPrice != null) addLine(triggerPrice, '#f97316', `⚡ ${setupLabel(setupType)}`,                     LS?.Solid ?? 0)
+    if (triggerPrice != null) addLine(triggerPrice, '#f97316', `⚡ ${setupLabel(setupType)}`,                       LS?.Solid ?? 0)
 
-    // Default view: 1M — show last 22 trading days so chart looks like TradingView
-    applyRange(22)
-  }, [sym, theme, height, entry, stop, target, direction, triggerPrice, setupType, applyRange])
+    // Fit full data, then show last portion depending on timeframe
+    chart.timeScale().fitContent()
+  }, [sym, theme, height, entry, stop, target, direction, triggerPrice, setupType])
 
-  // Load lightweight-charts CDN, then build
+  // Load lightweight-charts CDN, then build default (1D) chart
   useEffect(() => {
-    if (window.LightweightCharts) { buildChart(); return }
+    if (window.LightweightCharts) { buildChart('1D'); return }
     const script = document.createElement('script')
     script.src = 'https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js'
     script.async = true
-    script.onload = () => buildChart()
+    script.onload = () => buildChart('1D')
     document.head.appendChild(script)
     return () => { cleanupRef.current() }
   }, [buildChart])
 
-  // When user clicks a timeframe button, apply the range
-  const handleTF = (tf: typeof TIMEFRAMES[number]) => {
-    setActiveTF(tf.label)
-    applyRange(tf.bars)
+  // Handle interval button click
+  const handleIV = (ivLabel: IVLabel) => {
+    setActiveIV(ivLabel)
+    buildChart(ivLabel)
   }
 
   const entryLabel = direction === 'Short' ? 'Short Entry' : 'Buy Entry'
   const hasTrade = entry != null || stop != null || target != null || triggerPrice != null
   const hasEmas = ema8 != null || ema21 != null || ema50 != null
+  const activeIVDef = INTERVALS.find(i => i.label === activeIV) ?? INTERVALS[INTERVALS.length - 1]
 
   return (
     <div className="w-full rounded-xl overflow-hidden border border-white/10" style={{ background: '#0b1018' }}>
-      {/* Timeframe selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        {TIMEFRAMES.map(tf => (
-          <button
-            key={tf.label}
-            onClick={() => handleTF(tf)}
-            style={{
-              padding: '3px 10px',
-              borderRadius: 5,
-              fontSize: 11,
-              fontWeight: 700,
-              fontFamily: 'monospace',
-              border: activeTF === tf.label ? '1px solid rgba(99,179,237,0.5)' : '1px solid rgba(255,255,255,0.08)',
-              background: activeTF === tf.label ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.04)',
-              color: activeTF === tf.label ? '#38bdf8' : 'rgba(255,255,255,0.45)',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
-          >
-            {tf.label}
-          </button>
-        ))}
+      {/* Interval selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap' }}>
+        {INTERVALS.map(iv => {
+          const isIntraday = iv.interval !== '1d'
+          const isActive = activeIV === iv.label
+          return (
+            <button
+              key={iv.label}
+              onClick={() => handleIV(iv.label)}
+              style={{
+                padding: '3px 10px',
+                borderRadius: 5,
+                fontSize: 11,
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                border: isActive
+                  ? '1px solid rgba(99,179,237,0.5)'
+                  : isIntraday
+                  ? '1px solid rgba(255,255,255,0.06)'
+                  : '1px solid rgba(255,255,255,0.08)',
+                background: isActive
+                  ? 'rgba(56,189,248,0.15)'
+                  : 'rgba(255,255,255,0.04)',
+                color: isActive
+                  ? '#38bdf8'
+                  : isIntraday
+                  ? 'rgba(255,255,255,0.35)'
+                  : 'rgba(255,255,255,0.45)',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              {iv.label}
+            </button>
+          )
+        })}
+        {/* Divider between intraday and daily */}
+        <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.08)', margin: '0 3px' }} />
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
-          {sym} · Daily
+          {sym} · {activeIVDef.label}
         </span>
+        {isLoading && (
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', marginLeft: 6 }}>
+            loading…
+          </span>
+        )}
       </div>
 
       {/* Chart canvas */}
@@ -266,13 +268,13 @@ export function TradingViewWidget({
           <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 4 }}>
             Key Levels
           </span>
-          {ema8  != null && <Pill color="#f59e0b" bg="rgba(245,158,11,0.12)"  label="EMA 8"  value={ema8}  />}
+          {ema8 != null  && <Pill color="#f59e0b" bg="rgba(245,158,11,0.12)"  label="EMA 8"  value={ema8} />}
           {ema21 != null && <Pill color="#818cf8" bg="rgba(129,140,248,0.12)" label="EMA 21" value={ema21} />}
           {ema50 != null && <Pill color="#38bdf8" bg="rgba(56,189,248,0.12)"  label="EMA 50" value={ema50} />}
           {(hasEmas && hasTrade) && <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)', margin: '0 2px' }} />}
           {triggerPrice != null && <Pill color="#f97316" bg="rgba(249,115,22,0.12)" label={`⚡ ${setupLabel(setupType)}`} value={triggerPrice} />}
-          {entry  != null && <Pill color="#06b6d4" bg="rgba(6,182,212,0.12)"  label={entryLabel} value={entry}  />}
-          {stop   != null && <Pill color="#ef4444" bg="rgba(239,68,68,0.12)"  label="Stop Loss"  value={stop}   />}
+          {entry != null  && <Pill color="#06b6d4" bg="rgba(6,182,212,0.12)"  label={entryLabel}  value={entry} />}
+          {stop != null   && <Pill color="#ef4444" bg="rgba(239,68,68,0.12)"   label="Stop Loss" value={stop} />}
           {target != null && <Pill color="#10b981" bg="rgba(16,185,129,0.12)" label="Target"     value={target} />}
         </div>
       )}
