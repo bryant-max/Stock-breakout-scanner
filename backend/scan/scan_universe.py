@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from models.candle import ScanResult
-from providers.polygon import get_daily_candles, get_market_cap_usd, polygon_get, POLYGON_BASE
+from providers.polygon import get_daily_candles, get_market_cap_usd
 from scan.scan_one import scan_one, avg_volume
 from indicators.ema import ema
 from indicators.adr import adr_pct
@@ -22,21 +22,27 @@ def days_ago(n: int) -> datetime:
 
 async def get_live_price(symbol: str) -> Optional[float]:
     """
-    Fetch the current live/last trade price from Polygon snapshot.
-    Falls back to None if unavailable (e.g. market closed, API limit).
+    Fetch the current live/last trade price using yfinance fast_info.
+    yfinance is free and returns real-time last price during market hours.
+    Falls back to None if unavailable.
     """
+    import yfinance as yf
+
+    def _fetch():
+        try:
+            ticker = yf.Ticker(symbol.upper())
+            info = ticker.fast_info
+            price = getattr(info, 'last_price', None) or getattr(info, 'regularMarketPrice', None)
+            return float(price) if price else None
+        except Exception as e:
+            logger.debug(f"yfinance fast_info failed for {symbol}: {e}")
+            return None
+
     try:
-        url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{symbol.upper()}"
-        data = await polygon_get(url)
-        ticker = data.get("ticker", {})
-        # Try live day last price first, then last trade price
-        day = ticker.get("day", {})
-        live = day.get("c") or ticker.get("lastTrade", {}).get("p") or ticker.get("prevDay", {}).get("c")
-        if live:
-            return float(live)
+        return await asyncio.get_event_loop().run_in_executor(None, _fetch)
     except Exception as e:
         logger.debug(f"Live price fetch failed for {symbol}: {e}")
-    return None
+        return None
 
 async def scan_one_symbol(symbol: str) -> Optional[ScanResult]:
     """Scan a single symbol, fetch data, apply logic."""
@@ -67,8 +73,8 @@ async def scan_one_symbol(symbol: str) -> Optional[ScanResult]:
 
 async def get_symbol_technicals(symbol: str) -> Dict[str, Any]:
     """
-    Fetch Polygon data and compute full technicals for a symbol.
-    Uses live snapshot price so the displayed price is always current.
+    Fetch data and compute full technicals for a symbol.
+    Uses yfinance fast_info for live price (free, real-time).
     No hard filters — always returns data. Raises on data fetch failure.
     """
     from_date = days_ago(settings.SCAN_LOOKBACK_DAYS)
@@ -86,24 +92,24 @@ async def get_symbol_technicals(symbol: str) -> Dict[str, Any]:
 
     closes = [c.c for c in candles]
 
-    # Use live snapshot price if available, otherwise fall back to last daily close
+    # Use live price if available, otherwise fall back to last daily close
     price = live_price if live_price else closes[-1]
     logger.info(f"{symbol} price: live={live_price}, daily_close={closes[-1]}, using={price}")
 
-    ema8_series = ema(closes, 8) if len(closes) >= 8 else None
+    ema8_series  = ema(closes, 8)  if len(closes) >= 8  else None
     ema21_series = ema(closes, 21) if len(closes) >= 21 else None
     ema50_series = ema(closes, 50) if len(closes) >= 50 else None
     ema200_series = ema(closes, 200) if len(closes) >= 200 else None
 
-    ema8_val = ema8_series[-1] if ema8_series else None
-    ema21_val = ema21_series[-1] if ema21_series else None
-    ema50_val = ema50_series[-1] if ema50_series else None
+    ema8_val   = ema8_series[-1]   if ema8_series   else None
+    ema21_val  = ema21_series[-1]  if ema21_series  else None
+    ema50_val  = ema50_series[-1]  if ema50_series  else None
     ema200_val = ema200_series[-1] if ema200_series else None
 
     avg_vol = avg_volume(candles, 50)
     adr14 = adr_pct(candles, 14)
 
-    # Attempt full breakout scan (may return None if filters not met)
+    # Attempt full breakout scan
     scan_result: Optional[ScanResult] = None
     if len(candles) >= 260:
         scan_result = scan_one(symbol, candles)
@@ -147,7 +153,6 @@ async def scan_universe(symbols: List[str] = None) -> List[ScanResult]:
     if symbols is None:
         symbols = DEFAULT_UNIVERSE
 
-    # Run scans concurrently to respect Polygon rate limits
     semaphore = asyncio.Semaphore(settings.SCAN_CONCURRENCY_LIMIT)
 
     async def bounded_scan(symbol):
@@ -158,7 +163,6 @@ async def scan_universe(symbols: List[str] = None) -> List[ScanResult]:
     raw = await asyncio.gather(*tasks)
     results = [r for r in raw if r is not None]
 
-    # Sort best first
     results.sort(key=lambda x: x.breakout_score, reverse=True)
 
     return results
