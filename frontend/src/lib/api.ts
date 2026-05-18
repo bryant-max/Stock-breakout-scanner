@@ -67,6 +67,8 @@ export interface AISymbolAnalysis {
   suggested_expiry: string | null
   entry_notes: string
   stop_notes: string
+  bull_case?: string
+  fundamental_snapshot?: string[]
 }
 
 export interface UniverseScanRequest {
