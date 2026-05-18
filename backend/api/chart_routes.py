@@ -14,12 +14,12 @@ router = APIRouter()
 # In-memory cache: cache_key -> (timestamp, candles)
 _cache: dict = {}
 # Intraday intervals cache 15 seconds; daily caches 5 minutes
-INTRADAY_CACHE_TTL = 15   # seconds — keeps chart nearly real-time during market hours
-DAILY_CACHE_TTL    = 300  # seconds — daily bars don't need frequent refresh
+INTRADAY_CACHE_TTL = 15   # seconds
+DAILY_CACHE_TTL    = 300  # seconds
 
-# Separate cache for live snapshot prices (5-second TTL)
+# Separate cache for live snapshot prices (30-second TTL)
 _live_cache: dict = {}
-LIVE_CACHE_TTL = 5  # seconds
+LIVE_CACHE_TTL = 30  # seconds
 
 def _safe_float(val):
     """Convert a value to float, returning None for NaN/inf."""
@@ -64,7 +64,6 @@ POLYGON_INTERVAL_MAP = {
     "1wk": ("1", "week"),
 }
 
-# Default period to fetch for each interval (enough bars to be useful)
 DEFAULT_PERIOD_FOR_INTERVAL = {
     "5m": "5d",
     "15m": "10d",
@@ -79,30 +78,60 @@ DEFAULT_PERIOD_FOR_INTERVAL = {
 INTRADAY_INTERVALS = {"5m", "15m", "30m", "1h", "2h", "4h"}
 
 
-async def _fetch_live_snapshot_price(sym: str) -> dict | None:
+async def _fetch_live_snapshot_yfinance(sym: str) -> dict | None:
     """
-    Fetch the current live price from Polygon snapshot.
-    Returns dict with price, open, high, low, volume or None on failure.
-    Bypasses the candle cache — always fresh.
+    Fetch the current live/last price from yfinance (free, no API key needed).
+    Returns dict with price, open, high, low, volume, change_pct or None on failure.
+    yfinance gives the real-time last trade price during market hours.
     """
-    # Check short-lived live cache first
-    now = time.time()
-    if sym in _live_cache:
-        cached_at, cached_data = _live_cache[sym]
-        if now - cached_at < LIVE_CACHE_TTL:
-            return cached_data
+    import yfinance as yf
+
+    def _fetch():
+        try:
+            ticker = yf.Ticker(sym)
+            info = ticker.fast_info
+            # fast_info has: last_price, open, day_high, day_low, three_month_avg_volume, etc.
+            price = getattr(info, 'last_price', None) or getattr(info, 'regularMarketPrice', None)
+            if not price:
+                return None
+            prev_close = getattr(info, 'previous_close', None)
+            change_pct = None
+            if prev_close and prev_close > 0:
+                change_pct = round((price - prev_close) / prev_close * 100, 2)
+            return {
+                "price": round(float(price), 4),
+                "open":  round(float(getattr(info, 'open', price) or price), 4),
+                "high":  round(float(getattr(info, 'day_high', price) or price), 4),
+                "low":   round(float(getattr(info, 'day_low', price) or price), 4),
+                "volume": float(getattr(info, 'three_month_avg_volume', 0) or 0),
+                "prev_close": round(float(prev_close), 4) if prev_close else None,
+                "change_pct": change_pct,
+            }
+        except Exception as e:
+            logger.debug(f"yfinance fast_info failed for {sym}: {e}")
+            return None
 
     try:
-        url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{sym}"
+        result = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        return result
+    except Exception as e:
+        logger.debug(f"yfinance live price executor failed for {sym}: {e}")
+        return None
+
+
+async def _fetch_live_snapshot_polygon(sym: str) -> dict | None:
+    """
+    Attempt Polygon snapshot — works on paid plans.
+    Falls back gracefully to None on free tier (403/empty response).
+    """
+    try:
+        url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{sym.upper()}"
         data = await polygon_get(url)
         ticker = data.get("ticker", {})
-
-        # Intraday running day bar
         day = ticker.get("day", {})
         last_trade = ticker.get("lastTrade", {})
         prev_day = ticker.get("prevDay", {})
 
-        # Best live price: last trade > day close > prev close
         price = (
             _safe_float(last_trade.get("p"))
             or _safe_float(day.get("c"))
@@ -111,21 +140,45 @@ async def _fetch_live_snapshot_price(sym: str) -> dict | None:
         if not price:
             return None
 
-        result = {
+        prev_close = _safe_float(prev_day.get("c"))
+        change_pct = _safe_float(ticker.get("todaysChangePerc"))
+
+        return {
             "price": price,
             "open":  _safe_float(day.get("o")) or price,
             "high":  _safe_float(day.get("h")) or price,
             "low":   _safe_float(day.get("l")) or price,
             "volume": _safe_float(day.get("v")) or 0,
-            "prev_close": _safe_float(prev_day.get("c")),
-            "change_pct": _safe_float(ticker.get("todaysChangePerc")),
+            "prev_close": prev_close,
+            "change_pct": change_pct,
         }
-        _live_cache[sym] = (now, result)
-        return result
-
     except Exception as e:
-        logger.debug(f"Snapshot fetch failed for {sym}: {e}")
+        logger.debug(f"Polygon snapshot failed for {sym}: {e}")
         return None
+
+
+async def _fetch_live_snapshot_price(sym: str) -> dict | None:
+    """
+    Fetch live price. Tries Polygon first (paid tier), falls back to yfinance (free).
+    Results cached for LIVE_CACHE_TTL seconds to avoid hammering APIs.
+    """
+    now = time.time()
+    if sym in _live_cache:
+        cached_at, cached_data = _live_cache[sym]
+        if now - cached_at < LIVE_CACHE_TTL:
+            return cached_data
+
+    # Try Polygon first (fast if on paid tier)
+    result = await _fetch_live_snapshot_polygon(sym)
+
+    # Fall back to yfinance if Polygon gave nothing
+    if not result:
+        result = await _fetch_live_snapshot_yfinance(sym)
+
+    if result:
+        _live_cache[sym] = (now, result)
+
+    return result
 
 
 async def _fetch_polygon_candles(sym: str, from_date: str, to_date: str, interval: str) -> list:
@@ -142,7 +195,6 @@ async def _fetch_polygon_candles(sym: str, from_date: str, to_date: str, interva
     results = data.get("results", [])
     candles = []
     for r in results:
-        # Polygon timestamps are milliseconds — convert to seconds
         unix_ts = int(r.get("t", 0)) // 1000
         o = _safe_float(r.get("o"))
         h = _safe_float(r.get("h"))
@@ -162,23 +214,14 @@ async def _fetch_yfinance_candles(sym: str, period: str, interval: str) -> list:
     import yfinance as yf
     import pandas as pd
 
-    # yfinance interval strings differ from ours
     yf_interval_map = {
-        "5m": "5m",
-        "15m": "15m",
-        "30m": "30m",
-        "1h": "1h",
-        "2h": "2h",
-        "4h": "4h",  # yfinance doesn't support 4h natively — will use 1h
-        "1d": "1d",
-        "1wk": "1wk",
+        "5m": "5m", "15m": "15m", "30m": "30m",
+        "1h": "1h", "2h": "2h", "4h": "4h", "1d": "1d", "1wk": "1wk",
     }
     yf_interval = yf_interval_map.get(interval, "1d")
-    # yfinance 4h not supported — fall back to 1h
     if yf_interval == "4h":
         yf_interval = "1h"
 
-    # yfinance period strings
     yf_period_map = {
         "1d": "1d", "3d": "5d", "5d": "5d", "7d": "7d",
         "10d": "10d", "14d": "14d", "1mo": "1mo", "3mo": "3mo",
@@ -198,7 +241,8 @@ async def _fetch_yfinance_candles(sym: str, period: str, interval: str) -> list:
     candles = []
     for ts, row in df.iterrows():
         try:
-            unix_ts = int(pd.Timestamp(ts).timestamp())
+            import pandas as pd2
+            unix_ts = int(pd2.Timestamp(ts).timestamp())
         except Exception:
             continue
         o = _safe_float(row.get("Open"))
@@ -217,9 +261,9 @@ async def _fetch_yfinance_candles(sym: str, period: str, interval: str) -> list:
 @router.get("/live-price/{symbol}")
 async def get_live_price(symbol: str):
     """
-    Return the current real-time price from Polygon snapshot.
-    Bypasses the candle cache. Cached for 5 seconds max.
-    Used by the frontend for the live price tick overlay.
+    Return the current real-time price.
+    Primary: Polygon snapshot (paid tier). Fallback: yfinance (free, real-time).
+    Cached for 30 seconds to avoid hammering APIs.
     Response: { symbol, price, open, high, low, volume, change_pct, prev_close }
     """
     sym = symbol.strip().upper()
@@ -237,20 +281,14 @@ async def get_candles(
 ):
     """
     Return OHLCV candles for the lightweight-charts frontend chart.
-    Supports intraday (5m, 15m, 30m, 1h, 2h, 4h) and daily (1d) intervals.
-    Primary source: Polygon.io. Fallback: yfinance.
-
-    Intraday intervals: cached 15 seconds. Daily: cached 5 minutes.
-    The LAST candle is always patched with the live Polygon snapshot price so
-    the chart shows the current tick price even if the last completed bar is stale.
-
-    Response: { symbol, candles: [{time, open, high, low, close, volume}], live_price }
-    time is Unix timestamp (seconds).
+    Primary source: Polygon.io (historical). Fallback: yfinance.
+    Live price patched onto last candle from yfinance fast_info (free, real-time).
+    Intraday cache: 15 seconds. Daily cache: 5 minutes.
+    Response: { symbol, candles: [{time,open,high,low,close,volume}], live_price }
     """
     sym = symbol.strip().upper()
     is_intraday = interval in INTRADAY_INTERVALS
 
-    # If no period specified, pick a sensible default for the interval
     if period == "1y" and interval != "1d":
         period = DEFAULT_PERIOD_FOR_INTERVAL.get(interval, "1mo")
 
@@ -258,15 +296,14 @@ async def get_candles(
     now = time.time()
     ttl = INTRADAY_CACHE_TTL if is_intraday else DAILY_CACHE_TTL
 
-    # Return cached result if fresh
+    # Return cached result if fresh — still patch last candle with fresh live price
     if cache_key in _cache:
         cached_at, cached_candles = _cache[cache_key]
         if now - cached_at < ttl:
-            # Even on cache hit, patch last candle with fresh snapshot
             snap = await _fetch_live_snapshot_price(sym)
-            candles = list(cached_candles)  # shallow copy
+            candles = list(cached_candles)
             if snap and candles:
-                last = dict(candles[-1])  # don't mutate cached entry
+                last = dict(candles[-1])
                 last["close"] = snap["price"]
                 if snap["high"] and snap["high"] > last["high"]:
                     last["high"] = snap["high"]
@@ -277,15 +314,16 @@ async def get_candles(
                 "symbol": sym,
                 "candles": candles,
                 "live_price": snap["price"] if snap else None,
+                "change_pct": snap["change_pct"] if snap else None,
                 "source": "cache",
             }
 
     from_date, to_date = _period_to_dates(period)
 
-    # Try Polygon first; run candle fetch + snapshot concurrently
+    # Fetch candles + live price concurrently
     candles = []
-    source = "polygon"
     snap = None
+    source = "polygon"
     try:
         candles, snap = await asyncio.gather(
             _fetch_polygon_candles(sym, from_date, to_date, interval),
@@ -293,10 +331,9 @@ async def get_candles(
         )
         logger.info(f"Polygon returned {len(candles)} {interval} candles for {sym}")
     except Exception as e:
-        logger.warning(f"Polygon candle fetch failed for {sym} ({interval}): {e} — falling back to yfinance")
+        logger.warning(f"Polygon candle fetch failed for {sym} ({interval}): {e}")
         source = "yfinance"
 
-    # Fallback to yfinance if Polygon returned nothing or errored
     if not candles:
         try:
             candles = await _fetch_yfinance_candles(sym, period, interval)
@@ -309,13 +346,15 @@ async def get_candles(
     if not candles:
         raise HTTPException(status_code=404, detail=f"No candle data found for {sym}")
 
-    # Store raw candles in cache (without snapshot patch so cache stays neutral)
+    # Cache raw candles
     _cache[cache_key] = (now, candles)
 
-    # Patch last candle with live snapshot price so chart shows current tick
+    # Patch last candle with live price so chart always shows current tick
     live_price = None
+    change_pct = None
     if snap:
         live_price = snap["price"]
+        change_pct = snap.get("change_pct")
         last = dict(candles[-1])
         last["close"] = snap["price"]
         if snap["high"] and snap["high"] > last["high"]:
@@ -328,5 +367,6 @@ async def get_candles(
         "symbol": sym,
         "candles": candles,
         "live_price": live_price,
+        "change_pct": change_pct,
         "source": source,
     }
