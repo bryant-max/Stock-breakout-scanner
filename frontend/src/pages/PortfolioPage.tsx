@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Sidebar } from "@/components/dashboard/Sidebar"
 import { TradeModal } from "@/components/dashboard/TradeModal"
+import { TradeJournal } from "@/components/dashboard/TradeJournal"
 import { OptionsChain } from "@/components/dashboard/OptionsChain"
 import { supabase } from "@/lib/supabase"
 import { snaptradeGetStatus, snaptradeRegister, snaptradeGetConnectUrl, snaptradeGetHoldings, snaptradeGetActivities, snaptradeGetBalances, snaptradeUnlinkAccount, snaptradeListAuthorizations, type SnapTradeAccount, type SnapTradeActivity, type SnapTradeAuthorization } from "@/lib/api"
@@ -345,6 +346,10 @@ export default function PortfolioPage() {
                 </>
               )}
             </>
+          )}
+
+          {tab === "live" && connectionState === "connected" && (
+            <TradeJournal />
           )}
 
           {tab === "paper" && (
