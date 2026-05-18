@@ -493,7 +493,7 @@ Respond with this exact JSON format:
             return "Consolidation/Mixed"
 
 
-# Global instance
+# Global instance — singleton
 _ai_service: Optional[AIAnalysisService] = None
 
 
