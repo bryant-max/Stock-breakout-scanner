@@ -127,9 +127,15 @@ export function StockScanner() {
     return !!textContent.trim()
   }
 
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setSelectedFile(file)
+    if (file) {
+      setSelectedFile(file)
+      const url = URL.createObjectURL(file)
+      setImagePreviewUrl(url)
+    }
   }
 
   // Helpers
@@ -235,17 +241,17 @@ export function StockScanner() {
                   </div>
                 </div>
                 {selectedFile && (
-                  <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
-                    <BarChart3 className="h-5 w-5 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white truncate">{selectedFile.name}</p>
-                      <p className="text-xs text-white/40">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                    </div>
-                    <button onClick={() => setSelectedFile(null)} className="p-1.5 hover:bg-white/10 rounded-lg">
-                      <X className="h-4 w-4 text-white/50" />
-                    </button>
-                  </div>
-                )}
+              <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/40">
+                {imagePreviewUrl && <img src={imagePreviewUrl} alt="Chart preview" className="w-full max-h-56 object-contain" />}
+                <div className="flex items-center gap-2 px-3 py-2 bg-black/40">
+                  <BarChart3 className="h-4 w-4 text-primary shrink-0" />
+                  <span className="text-xs text-white/60 flex-1 truncate">{selectedFile.name} · {(selectedFile.size / 1024).toFixed(0)}KB</span>
+                  <button onClick={() => { setSelectedFile(null); setImagePreviewUrl(null) }} className="p-1 hover:bg-white/10 rounded-lg">
+                    <X className="h-3.5 w-3.5 text-white/50" />
+                  </button>
+                </div>
+              </div>
+            )}
                 <p className="text-xs text-white/40 flex items-center gap-1.5">
                   <span className="h-1 w-1 rounded-full bg-primary/50 inline-block" />
                   Sean will identify patterns, support/resistance, and potential setups from your chart
@@ -570,6 +576,29 @@ export function StockScanner() {
                 </div>
               )}
             </div>
+
+              {/* ── Fundamental Analysis — Bull Case ── */}
+              {(symbolResult.bull_case || (symbolResult.fundamental_snapshot && symbolResult.fundamental_snapshot.length > 0)) && (
+                <div className="bg-gradient-to-br from-amber-500/8 to-orange-500/5 border border-amber-500/20 rounded-xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🌱</span>
+                    <h4 className="text-sm font-semibold text-amber-400 uppercase tracking-wider">Fundamental Analysis — Bull Case</h4>
+                  </div>
+                  {symbolResult.bull_case && (
+                    <p className="text-white/80 text-sm leading-relaxed">{symbolResult.bull_case}</p>
+                  )}
+                  {symbolResult.fundamental_snapshot && symbolResult.fundamental_snapshot.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      {symbolResult.fundamental_snapshot.map((point, i) => (
+                        <div key={i} className="flex items-start gap-2.5 bg-white/4 rounded-lg px-3 py-2">
+                          <span className="text-amber-400/70 text-xs font-bold shrink-0 mt-0.5">{i + 1}</span>
+                          <span className="text-xs text-white/70 leading-relaxed">{point}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
             {/* Trade Setup Card */}
             {(symbolResult.suggested_entry || symbolResult.entry_notes || symbolResult.stop_notes) && (
