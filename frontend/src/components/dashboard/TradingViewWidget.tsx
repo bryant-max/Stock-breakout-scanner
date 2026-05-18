@@ -23,13 +23,15 @@ type TradingViewWidgetProps = {
   setupType?: string | null
 }
 
-// Timeframe definitions — candles to show in visible range
+// Timeframe definitions — number of trading days to show in visible range
+// These mirror TradingView's bottom bar: 1M 3M 6M 1Y
+// Default on load: 1M (last 22 trading days — gives a clear multi-candle view)
 const TIMEFRAMES = [
-  { label: '1D',  bars: 1    },
-  { label: '3D',  bars: 3    },
-  { label: '1W',  bars: 5    },
-  { label: '1M',  bars: 22   },
-  { label: '3M',  bars: 66   },
+  { label: '1M',  bars: 22  },
+  { label: '3M',  bars: 66  },
+  { label: '6M',  bars: 132 },
+  { label: '1Y',  bars: 252 },
+  { label: 'ALL', bars: 9999 },
 ] as const
 type TFLabel = typeof TIMEFRAMES[number]['label']
 
@@ -63,26 +65,31 @@ export function TradingViewWidget({
   ema8, ema21, ema50, triggerPrice, setupType,
 }: TradingViewWidgetProps) {
   const sym = sanitizeSymbol(symbol)
-  const containerRef  = useRef<HTMLDivElement>(null)
-  const chartRef      = useRef<any>(null)
-  const cleanupRef    = useRef<() => void>(() => {})
-  const candlesRef    = useRef<{ time: number; open: number; high: number; low: number; close: number; volume: number }[]>([])
-  const [activeTF, setActiveTF] = useState<TFLabel>('1D')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<any>(null)
+  const cleanupRef = useRef<() => void>(() => {})
+  const candlesRef = useRef<{ time: number; open: number; high: number; low: number; close: number; volume: number }[]>([])
+  const [activeTF, setActiveTF] = useState<TFLabel>('1M')
 
   // Apply a visible range on the chart based on bars count
   const applyRange = useCallback((bars: number) => {
     const chart = chartRef.current
     const candles = candlesRef.current
     if (!chart || candles.length === 0) return
-    const last = candles[candles.length - 1].time
-    // Show 'bars' worth of daily candles. Each bar = ~1 trading day.
-    // Add ~20% right margin so latest candle isn't stuck at the edge.
-    const margin = Math.ceil(bars * 0.2)
-    const fromIdx = Math.max(0, candles.length - bars - margin)
+
+    if (bars >= 9999) {
+      // ALL: fit all data
+      chart.timeScale().fitContent()
+      return
+    }
+
+    const displayBars = Math.min(bars, candles.length)
+    // 10% right margin so latest candle has breathing room
+    const marginBars = Math.max(2, Math.ceil(displayBars * 0.08))
+    const fromIdx = Math.max(0, candles.length - displayBars)
     const from = candles[fromIdx].time
-    // right side: push slightly past last candle for breathing room
     const dayMs = 86400
-    const to = last + dayMs * margin
+    const to = candles[candles.length - 1].time + dayMs * marginBars
     chart.timeScale().setVisibleRange({ from, to })
   }, [])
 
@@ -115,9 +122,14 @@ export function TradingViewWidget({
         borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
         timeVisible: false,
         secondsVisible: false,
+        // Allow user to scroll/zoom freely like TradingView
+        rightOffset: 3,
+        barSpacing: 8,
+        minBarSpacing: 1,
       },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true },
-      handleScale: { mouseWheel: true, pinch: true },
+      // Full pan and zoom support — user can drag/scroll anywhere
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
     })
     chartRef.current = chart
 
@@ -167,36 +179,28 @@ export function TradingViewWidget({
 
     // EMA lines
     const closes = candles.map(c => c.close)
-    const times  = candles.map(c => c.time)
+    const times = candles.map(c => c.time)
     const addEMASeries = (period: number, color: string) => {
       const vals = calcEMA(closes, period)
       const series = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, title: `EMA ${period}` })
       series.setData(vals.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)))
     }
-    addEMASeries(8,  '#f59e0b')
+    addEMASeries(8, '#f59e0b')
     addEMASeries(21, '#818cf8')
     addEMASeries(50, '#38bdf8')
 
-    // Native price lines (move with zoom/pan)
+    // Native price lines (move with zoom/pan — stay attached to chart canvas)
     const LS = LW.LineStyle
     const addLine = (price: number, color: string, title: string, style: number) =>
       candleSeries.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })
-    if (entry       != null) addLine(entry,        '#06b6d4', direction === 'Short' ? 'Short Entry' : 'Buy Entry', LS?.Dashed ?? 1)
-    if (stop        != null) addLine(stop,         '#ef4444', 'Stop Loss',                                         LS?.Dashed ?? 1)
-    if (target      != null) addLine(target,       '#10b981', 'Target',                                            LS?.Dashed ?? 1)
-    if (triggerPrice != null) addLine(triggerPrice, '#f97316', `⚡ ${setupLabel(setupType)}`,                    LS?.Solid  ?? 0)
+    if (entry != null)        addLine(entry,        '#06b6d4', direction === 'Short' ? 'Short Entry' : 'Buy Entry', LS?.Dashed ?? 1)
+    if (stop != null)         addLine(stop,         '#ef4444', 'Stop Loss',                                         LS?.Dashed ?? 1)
+    if (target != null)       addLine(target,       '#10b981', 'Target',                                            LS?.Dashed ?? 1)
+    if (triggerPrice != null) addLine(triggerPrice, '#f97316', `⚡ ${setupLabel(setupType)}`,                     LS?.Solid ?? 0)
 
-    // Default view: 1D (last ~22 bars — one trading month)
-    // activeTF state is '1D' on first render, so we always start on 1D
-    const tf = TIMEFRAMES.find(t => t.label === '1D')!
-    const margin = Math.ceil(tf.bars * 0.2)
-    const fromIdx = Math.max(0, candles.length - tf.bars - margin)
-    const dayMs = 86400
-    chart.timeScale().setVisibleRange({
-      from: candles[fromIdx].time,
-      to:   candles[candles.length - 1].time + dayMs * margin,
-    })
-  }, [sym, theme, height, entry, stop, target, direction, triggerPrice, setupType])
+    // Default view: 1M — show last 22 trading days so chart looks like TradingView
+    applyRange(22)
+  }, [sym, theme, height, entry, stop, target, direction, triggerPrice, setupType, applyRange])
 
   // Load lightweight-charts CDN, then build
   useEffect(() => {
@@ -216,8 +220,8 @@ export function TradingViewWidget({
   }
 
   const entryLabel = direction === 'Short' ? 'Short Entry' : 'Buy Entry'
-  const hasTrade   = entry != null || stop != null || target != null || triggerPrice != null
-  const hasEmas    = ema8 != null || ema21 != null || ema50 != null
+  const hasTrade = entry != null || stop != null || target != null || triggerPrice != null
+  const hasEmas = ema8 != null || ema21 != null || ema50 != null
 
   return (
     <div className="w-full rounded-xl overflow-hidden border border-white/10" style={{ background: '#0b1018' }}>
@@ -266,10 +270,10 @@ export function TradingViewWidget({
           {ema21 != null && <Pill color="#818cf8" bg="rgba(129,140,248,0.12)" label="EMA 21" value={ema21} />}
           {ema50 != null && <Pill color="#38bdf8" bg="rgba(56,189,248,0.12)"  label="EMA 50" value={ema50} />}
           {(hasEmas && hasTrade) && <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)', margin: '0 2px' }} />}
-          {triggerPrice != null && <Pill color="#f97316" bg="rgba(249,115,22,0.12)"  label={`⚡ ${setupLabel(setupType)}`} value={triggerPrice} />}
-          {entry != null        && <Pill color="#06b6d4" bg="rgba(6,182,212,0.12)"   label={entryLabel}  value={entry}  />}
-          {stop  != null        && <Pill color="#ef4444" bg="rgba(239,68,68,0.12)"   label="Stop Loss"   value={stop}   />}
-          {target != null       && <Pill color="#10b981" bg="rgba(16,185,129,0.12)"  label="Target"      value={target} />}
+          {triggerPrice != null && <Pill color="#f97316" bg="rgba(249,115,22,0.12)" label={`⚡ ${setupLabel(setupType)}`} value={triggerPrice} />}
+          {entry  != null && <Pill color="#06b6d4" bg="rgba(6,182,212,0.12)"  label={entryLabel} value={entry}  />}
+          {stop   != null && <Pill color="#ef4444" bg="rgba(239,68,68,0.12)"  label="Stop Loss"  value={stop}   />}
+          {target != null && <Pill color="#10b981" bg="rgba(16,185,129,0.12)" label="Target"     value={target} />}
         </div>
       )}
     </div>
