@@ -678,6 +678,7 @@ export async function logTradeOutcome(data: {
   outcome?: string
   breakout_score?: number
   notes?: string
+  traded_at?: string
 }): Promise<TradeOutcome> {
   const headers = await getAuthHeaders()
   const response = await fetch(`${API_URL}/api/trades/outcome`, {
