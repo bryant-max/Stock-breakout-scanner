@@ -16,7 +16,7 @@ INTRADAY_CACHE_TTL = 15
 DAILY_CACHE_TTL    = 300
 
 _live_cache: dict = {}
-LIVE_CACHE_TTL = 30
+LIVE_CACHE_TTL = 60  # 60 seconds — use Polygon candle data which already works
 
 def _safe_float(val):
     try:
@@ -53,80 +53,23 @@ DEFAULT_PERIOD_FOR_INTERVAL = {
 INTRADAY_INTERVALS = {"5m", "15m", "30m", "1h", "2h", "4h"}
 
 
-async def _fetch_live_snapshot_yfinance(sym: str) -> dict | None:
+async def _fetch_live_snapshot_price(sym: str) -> dict | None:
     """
-    Fetch the current live/last price using yfinance.
-    Strategy (most reliable first):
-      1. fast_info.last_price  — real-time during market hours
-      2. fast_info.previous_close — most recent close (pre/post market)
-      3. history(period='2d', interval='1d').Close[-1] — guaranteed to return a price
+    Fetch current price via Polygon snapshot (real-time on paid tier).
+    Falls back to Polygon 2-day daily aggregate (free tier — returns EOD price).
+    The aggregate approach uses the same Polygon candle endpoint that already works,
+    so this is always reliable.
+    Cached for LIVE_CACHE_TTL seconds.
     """
-    import yfinance as yf
-    import pandas as pd
+    now = time.time()
+    if sym in _live_cache:
+        cached_at, cached_data = _live_cache[sym]
+        if now - cached_at < LIVE_CACHE_TTL:
+            return cached_data
 
-    def _fetch():
-        try:
-            ticker = yf.Ticker(sym)
+    result = None
 
-            # --- Attempt 1: fast_info ---
-            try:
-                fi = ticker.fast_info
-                price = (
-                    getattr(fi, 'last_price', None)
-                    or getattr(fi, 'regularMarketPrice', None)
-                )
-                if price and float(price) > 0:
-                    prev_close = getattr(fi, 'previous_close', None) or getattr(fi, 'regularMarketPreviousClose', None)
-                    change_pct = None
-                    if prev_close and float(prev_close) > 0:
-                        change_pct = round((float(price) - float(prev_close)) / float(prev_close) * 100, 2)
-                    return {
-                        "price": round(float(price), 4),
-                        "open":  round(float(getattr(fi, 'open', price) or price), 4),
-                        "high":  round(float(getattr(fi, 'day_high', price) or price), 4),
-                        "low":   round(float(getattr(fi, 'day_low', price) or price), 4),
-                        "volume": float(getattr(fi, 'three_month_avg_volume', 0) or 0),
-                        "prev_close": round(float(prev_close), 4) if prev_close else None,
-                        "change_pct": change_pct,
-                    }
-            except Exception as e:
-                logger.debug(f"fast_info attempt failed for {sym}: {e}")
-
-            # --- Attempt 2: history 2d/1d (always works) ---
-            try:
-                df = ticker.history(period="2d", interval="1d", auto_adjust=True)
-                if df is not None and not df.empty:
-                    price = float(df["Close"].iloc[-1])
-                    prev_close = float(df["Close"].iloc[-2]) if len(df) > 1 else None
-                    change_pct = None
-                    if prev_close and prev_close > 0:
-                        change_pct = round((price - prev_close) / prev_close * 100, 2)
-                    return {
-                        "price": round(price, 4),
-                        "open":  round(float(df["Open"].iloc[-1]), 4),
-                        "high":  round(float(df["High"].iloc[-1]), 4),
-                        "low":   round(float(df["Low"].iloc[-1]), 4),
-                        "volume": float(df["Volume"].iloc[-1]) if "Volume" in df.columns else 0,
-                        "prev_close": round(prev_close, 4) if prev_close else None,
-                        "change_pct": change_pct,
-                    }
-            except Exception as e:
-                logger.debug(f"history fallback failed for {sym}: {e}")
-
-            return None
-        except Exception as e:
-            logger.debug(f"yfinance live price failed for {sym}: {e}")
-            return None
-
-    try:
-        return await asyncio.get_event_loop().run_in_executor(None, _fetch)
-    except Exception as e:
-        logger.debug(f"yfinance executor failed for {sym}: {e}")
-        return None
-
-
-async def _fetch_live_snapshot_polygon(sym: str) -> dict | None:
-    """Attempt Polygon snapshot (paid plans only). Returns None on free tier."""
+    # --- Attempt 1: Polygon snapshot (real-time, requires paid plan) ---
     try:
         url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{sym.upper()}"
         data = await polygon_get(url)
@@ -140,40 +83,49 @@ async def _fetch_live_snapshot_polygon(sym: str) -> dict | None:
             or _safe_float(day.get("c"))
             or _safe_float(prev_day.get("c"))
         )
-        if not price:
-            return None
-
-        return {
-            "price": price,
-            "open":  _safe_float(day.get("o")) or price,
-            "high":  _safe_float(day.get("h")) or price,
-            "low":   _safe_float(day.get("l")) or price,
-            "volume": _safe_float(day.get("v")) or 0,
-            "prev_close": _safe_float(prev_day.get("c")),
-            "change_pct": _safe_float(ticker.get("todaysChangePerc")),
-        }
+        if price:
+            result = {
+                "price": price,
+                "open":  _safe_float(day.get("o")) or price,
+                "high":  _safe_float(day.get("h")) or price,
+                "low":   _safe_float(day.get("l")) or price,
+                "volume": _safe_float(day.get("v")) or 0,
+                "prev_close": _safe_float(prev_day.get("c")),
+                "change_pct": _safe_float(ticker.get("todaysChangePerc")),
+                "source": "polygon_snapshot",
+            }
     except Exception as e:
         logger.debug(f"Polygon snapshot failed for {sym}: {e}")
-        return None
 
-
-async def _fetch_live_snapshot_price(sym: str) -> dict | None:
-    """
-    Fetch live price. Tries Polygon first (paid), falls back to yfinance (free).
-    Cached LIVE_CACHE_TTL seconds.
-    """
-    now = time.time()
-    if sym in _live_cache:
-        cached_at, cached_data = _live_cache[sym]
-        if now - cached_at < LIVE_CACHE_TTL:
-            return cached_data
-
-    # Try yfinance directly — most reliable on our free Polygon tier
-    result = await _fetch_live_snapshot_yfinance(sym)
-
-    # Also try Polygon in case we upgrade later
+    # --- Attempt 2: Polygon 5-day daily aggregate (always works on free tier) ---
     if not result:
-        result = await _fetch_live_snapshot_polygon(sym)
+        try:
+            to_date = datetime.utcnow()
+            from_date = to_date - timedelta(days=5)
+            url = f"{POLYGON_BASE}/v2/aggs/ticker/{sym.upper()}/range/1/day/{from_date.strftime('%Y-%m-%d')}/{to_date.strftime('%Y-%m-%d')}"
+            data = await polygon_get(url, {"adjusted": "true", "sort": "asc", "limit": 10})
+            bars = data.get("results", [])
+            if bars:
+                last = bars[-1]
+                prev = bars[-2] if len(bars) > 1 else None
+                price = _safe_float(last.get("c"))
+                if price:
+                    prev_close = _safe_float(prev.get("c")) if prev else None
+                    change_pct = None
+                    if prev_close and prev_close > 0:
+                        change_pct = round((price - prev_close) / prev_close * 100, 2)
+                    result = {
+                        "price": price,
+                        "open":  _safe_float(last.get("o")) or price,
+                        "high":  _safe_float(last.get("h")) or price,
+                        "low":   _safe_float(last.get("l")) or price,
+                        "volume": _safe_float(last.get("v")) or 0,
+                        "prev_close": prev_close,
+                        "change_pct": change_pct,
+                        "source": "polygon_aggregate",
+                    }
+        except Exception as e:
+            logger.debug(f"Polygon aggregate fallback failed for {sym}: {e}")
 
     if result:
         _live_cache[sym] = (now, result)
@@ -202,7 +154,6 @@ async def _fetch_polygon_candles(sym: str, from_date: str, to_date: str, interva
 async def _fetch_yfinance_candles(sym: str, period: str, interval: str) -> list:
     """Fallback candles from yfinance."""
     import yfinance as yf
-    import pandas as pd
 
     yf_interval_map = {
         "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h",
@@ -228,8 +179,8 @@ async def _fetch_yfinance_candles(sym: str, period: str, interval: str) -> list:
     candles = []
     for ts, row in df.iterrows():
         try:
-            import pandas as pd2
-            unix_ts = int(pd2.Timestamp(ts).timestamp())
+            import pandas as pd
+            unix_ts = int(pd.Timestamp(ts).timestamp())
         except Exception: continue
         o = _safe_float(row.get("Open")); h = _safe_float(row.get("High"))
         lo = _safe_float(row.get("Low")); c = _safe_float(row.get("Close"))
@@ -243,14 +194,15 @@ async def _fetch_yfinance_candles(sym: str, period: str, interval: str) -> list:
 @router.get("/live-price/{symbol}")
 async def get_live_price(symbol: str):
     """
-    Return the current real-time price.
-    Uses yfinance history(2d) as guaranteed fallback — always returns a price.
-    Cached 30 seconds.
+    Return the most recent price for a symbol.
+    Tries Polygon snapshot (real-time on paid plan), falls back to Polygon
+    5-day daily aggregate which always works on the free tier.
+    Returns the last available closing price with change %.
     """
     sym = symbol.strip().upper()
     snap = await _fetch_live_snapshot_price(sym)
     if not snap:
-        raise HTTPException(status_code=404, detail=f"No live price data for {sym}")
+        raise HTTPException(status_code=404, detail=f"No price data available for {sym}")
     return {"symbol": sym, **snap}
 
 
@@ -261,7 +213,9 @@ async def get_candles(
     interval: str = Query(default="1d"),
 ):
     """
-    Return OHLCV candles. Polygon for history, yfinance for live price patch on last candle.
+    Return OHLCV candles for the chart.
+    Polygon for history (primary), yfinance as fallback.
+    Last candle is patched with the most recent price from live-price endpoint.
     Intraday cache: 15s. Daily cache: 5min.
     """
     sym = symbol.strip().upper()
@@ -279,6 +233,8 @@ async def get_candles(
         if now - cached_at < ttl:
             snap = await _fetch_live_snapshot_price(sym)
             candles = list(cached_candles)
+            # Always use last candle close as fallback even if snap fails
+            live_price = snap["price"] if snap else candles[-1]["close"] if candles else None
             if snap and candles:
                 last = dict(candles[-1])
                 last["close"] = snap["price"]
@@ -287,7 +243,7 @@ async def get_candles(
                 candles[-1] = last
             return {
                 "symbol": sym, "candles": candles,
-                "live_price": snap["price"] if snap else None,
+                "live_price": live_price,
                 "change_pct": snap.get("change_pct") if snap else None,
                 "source": "cache",
             }
@@ -300,7 +256,7 @@ async def get_candles(
             _fetch_polygon_candles(sym, from_date, to_date, interval),
             _fetch_live_snapshot_price(sym),
         )
-        logger.info(f"Polygon returned {len(candles)} {interval} candles for {sym}")
+        logger.info(f"Polygon returned {len(candles)} {interval} candles for {sym}, live={snap['price'] if snap else None}")
     except Exception as e:
         logger.warning(f"Polygon candle fetch failed for {sym} ({interval}): {e}")
         source = "yfinance"
@@ -318,9 +274,11 @@ async def get_candles(
 
     _cache[cache_key] = (now, candles)
 
-    live_price = None; change_pct = None
+    # Patch last candle with live price; fall back to last candle close
+    live_price = snap["price"] if snap else candles[-1]["close"]
+    change_pct = snap.get("change_pct") if snap else None
+
     if snap:
-        live_price = snap["price"]; change_pct = snap.get("change_pct")
         last = dict(candles[-1])
         last["close"] = snap["price"]
         if snap["high"] and snap["high"] > last["high"]: last["high"] = snap["high"]
