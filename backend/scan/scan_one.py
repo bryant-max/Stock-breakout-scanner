@@ -78,10 +78,13 @@ def scan_one(symbol: str, candles: List[Candle]) -> Optional[ScanResult]:
         }
     )
 
-    # Setup type
+    # Setup type — determined by pattern priority
     setup_type = "UNKNOWN"
     if trigger_info["cluster_touches"] >= 3:
         setup_type = "FLAT_TOP"
+    elif wedge.ok and base.ok:
+        # Higher lows into a tight base = bull flag / pennant
+        setup_type = "FLAG"
     elif wedge.ok:
         setup_type = "WEDGE"
     elif base.ok:
