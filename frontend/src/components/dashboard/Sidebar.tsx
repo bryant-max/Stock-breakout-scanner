@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { LayoutDashboard, Brain, Target, TrendingUp, Settings, BarChart3, Activity, X, ArrowLeft, Wallet, BookOpen, ChevronLeft, PanelLeft } from "lucide-react"
+import { LayoutDashboard, Brain, Target, TrendingUp, Settings, BarChart3, Activity, X, ArrowLeft, Wallet, BookOpen, NotebookPen, ChevronLeft, PanelLeft } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 
 import { cn } from "@/lib/utils"
@@ -38,7 +38,7 @@ const navSections: NavSection[] = [
   {
     title: "Account",
     items: [
-      { icon: <BarChart3 className="h-4 w-4" />, label: "Analytics", href: "/analytics" },
+      { icon: <NotebookPen className="h-4 w-4" />, label: "Trade Journal", href: "/analytics" },
       { icon: <BookOpen className="h-4 w-4" />, label: "AI Training", href: "/ai-training", adminOnly: true },
       { icon: <Settings className="h-4 w-4" />, label: "Settings", href: "/settings" },
     ],
