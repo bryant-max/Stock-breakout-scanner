@@ -493,7 +493,7 @@ Respond with this exact JSON format:
             return "Consolidation/Mixed"
 
 
-# Global instance — singleton
+# Global instance — singleton (re-deploy trigger)
 _ai_service: Optional[AIAnalysisService] = None
 
 
