@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from models.candle import ScanResult
-from providers.polygon import get_daily_candles, get_market_cap_usd
+from providers.polygon import get_daily_candles, get_market_cap_usd, polygon_get, POLYGON_BASE
 from scan.scan_one import scan_one, avg_volume
 from indicators.ema import ema
 from indicators.adr import adr_pct
@@ -14,13 +14,29 @@ logger = logging.getLogger(__name__)
 # Parse default universe from settings
 DEFAULT_UNIVERSE = [s.strip() for s in settings.DEFAULT_SCAN_UNIVERSE.split(",")]
 
-
 def days_ago(n: int) -> datetime:
     """Get date n days ago."""
     d = datetime.utcnow()
     d = d.replace(hour=0, minute=0, second=0, microsecond=0)
     return d - timedelta(days=n)
 
+async def get_live_price(symbol: str) -> Optional[float]:
+    """
+    Fetch the current live/last trade price from Polygon snapshot.
+    Falls back to None if unavailable (e.g. market closed, API limit).
+    """
+    try:
+        url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{symbol.upper()}"
+        data = await polygon_get(url)
+        ticker = data.get("ticker", {})
+        # Try live day last price first, then last trade price
+        day = ticker.get("day", {})
+        live = day.get("c") or ticker.get("lastTrade", {}).get("p") or ticker.get("prevDay", {}).get("c")
+        if live:
+            return float(live)
+    except Exception as e:
+        logger.debug(f"Live price fetch failed for {symbol}: {e}")
+    return None
 
 async def scan_one_symbol(symbol: str) -> Optional[ScanResult]:
     """Scan a single symbol, fetch data, apply logic."""
@@ -49,29 +65,41 @@ async def scan_one_symbol(symbol: str) -> Optional[ScanResult]:
         logger.error(f"Error scanning {symbol}: {e}")
         return None
 
-
 async def get_symbol_technicals(symbol: str) -> Dict[str, Any]:
     """
     Fetch Polygon data and compute full technicals for a symbol.
+    Uses live snapshot price so the displayed price is always current.
     No hard filters — always returns data. Raises on data fetch failure.
     """
     from_date = days_ago(settings.SCAN_LOOKBACK_DAYS)
     to_date = datetime.utcnow()
 
-    candles, market_cap = await asyncio.gather(
+    # Fetch candles + market cap + live price concurrently
+    candles, market_cap, live_price = await asyncio.gather(
         get_daily_candles(symbol, from_date, to_date, adjusted=True),
         get_market_cap_usd(symbol),
+        get_live_price(symbol),
     )
 
     if len(candles) < 50:
         raise ValueError(f"Not enough price history for {symbol} ({len(candles)} candles)")
 
     closes = [c.c for c in candles]
-    price = closes[-1]
 
-    ema21_val = ema(closes, 21)[-1] if len(closes) >= 21 else None
-    ema50_val = ema(closes, 50)[-1] if len(closes) >= 50 else None
-    ema200_val = ema(closes, 200)[-1] if len(closes) >= 200 else None
+    # Use live snapshot price if available, otherwise fall back to last daily close
+    price = live_price if live_price else closes[-1]
+    logger.info(f"{symbol} price: live={live_price}, daily_close={closes[-1]}, using={price}")
+
+    ema8_series = ema(closes, 8) if len(closes) >= 8 else None
+    ema21_series = ema(closes, 21) if len(closes) >= 21 else None
+    ema50_series = ema(closes, 50) if len(closes) >= 50 else None
+    ema200_series = ema(closes, 200) if len(closes) >= 200 else None
+
+    ema8_val = ema8_series[-1] if ema8_series else None
+    ema21_val = ema21_series[-1] if ema21_series else None
+    ema50_val = ema50_series[-1] if ema50_series else None
+    ema200_val = ema200_series[-1] if ema200_series else None
+
     avg_vol = avg_volume(candles, 50)
     adr14 = adr_pct(candles, 14)
 
@@ -82,7 +110,7 @@ async def get_symbol_technicals(symbol: str) -> Dict[str, Any]:
         if scan_result:
             scan_result.market_cap = market_cap
 
-    # Trend assessment
+    # Trend assessment using live price
     trend = "Mixed / Consolidating"
     if ema21_val and ema50_val and ema200_val:
         if price > ema21_val > ema50_val > ema200_val:
@@ -93,10 +121,16 @@ async def get_symbol_technicals(symbol: str) -> Dict[str, Any]:
             trend = "Short-term Uptrend — above 21 EMA only"
         elif price < ema21_val < ema50_val < ema200_val:
             trend = "Downtrend — below all EMAs"
+    elif ema21_val and ema50_val:
+        if price > ema21_val > ema50_val:
+            trend = "Uptrend — above EMA 21 & 50"
+        elif price < ema21_val < ema50_val:
+            trend = "Downtrend — below EMA 21 & 50"
 
     return {
         "symbol": symbol,
         "price": price,
+        "ema8": ema8_val,
         "ema21": ema21_val,
         "ema50": ema50_val,
         "ema200": ema200_val,
@@ -107,7 +141,6 @@ async def get_symbol_technicals(symbol: str) -> Dict[str, Any]:
         "trend": trend,
         "scan_result": scan_result,
     }
-
 
 async def scan_universe(symbols: List[str] = None) -> List[ScanResult]:
     """Scan entire universe, return actionable setups."""
