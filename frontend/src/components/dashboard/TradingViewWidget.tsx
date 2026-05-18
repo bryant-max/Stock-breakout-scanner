@@ -22,13 +22,13 @@ type TradingViewWidgetProps = {
 }
 
 const INTERVALS = [
-  { label: '5m',  interval: '5m',  period: '5d',  timeVisible: true,  pollMs: 30_000  },
-  { label: '15m', interval: '15m', period: '10d', timeVisible: true,  pollMs: 60_000  },
-  { label: '30m', interval: '30m', period: '14d', timeVisible: true,  pollMs: 60_000  },
-  { label: '1h',  interval: '1h',  period: '1mo', timeVisible: true,  pollMs: 120_000 },
-  { label: '2h',  interval: '2h',  period: '1mo', timeVisible: true,  pollMs: 120_000 },
-  { label: '4h',  interval: '4h',  period: '3mo', timeVisible: true,  pollMs: 300_000 },
-  { label: '1D',  interval: '1d',  period: '1y',  timeVisible: false, pollMs: 60_000  },
+  { label: '5m',  interval: '5m',  period: '5d',  timeVisible: true,  pollMs: 5_000 },
+  { label: '15m', interval: '15m', period: '10d', timeVisible: true,  pollMs: 5_000 },
+  { label: '30m', interval: '30m', period: '14d', timeVisible: true,  pollMs: 5_000 },
+  { label: '1h',  interval: '1h',  period: '1mo', timeVisible: true,  pollMs: 5_000 },
+  { label: '2h',  interval: '2h',  period: '1mo', timeVisible: true,  pollMs: 5_000 },
+  { label: '4h',  interval: '4h',  period: '3mo', timeVisible: true,  pollMs: 5_000 },
+  { label: '1D',  interval: '1d',  period: '1y',  timeVisible: false, pollMs: 15_000 },
 ] as const
 type IVLabel = typeof INTERVALS[number]['label']
 
@@ -37,31 +37,27 @@ function sanitizeSymbol(raw: string): string {
 }
 function setupLabel(t: string | null | undefined): string {
   if (t === 'FLAT_TOP') return 'Flat Top Breakout'
-  if (t === 'WEDGE')    return 'Wedge Breakout'
-  if (t === 'FLAG')     return 'Flag Breakout'
-  if (t === 'BASE')     return 'Base Breakout'
+  if (t === 'WEDGE') return 'Wedge Breakout'
+  if (t === 'FLAG') return 'Flag Breakout'
+  if (t === 'BASE') return 'Base Breakout'
   return 'Breakout Level'
 }
 function calcEMA(closes: number[], period: number): number[] {
   const k = 2 / (period + 1); const emas: number[] = []
   for (let i = 0; i < closes.length; i++) {
-    if (i < period - 1)  { emas.push(NaN); continue }
+    if (i < period - 1) { emas.push(NaN); continue }
     if (i === period - 1) { emas.push(closes.slice(0, period).reduce((a, b) => a + b, 0) / period); continue }
     emas.push(closes[i] * k + emas[i - 1] * (1 - k))
   }
   return emas
 }
 
-/** Fetch live snapshot price from our backend candle endpoint (1-bar latest) */
-async function fetchLivePrice(sym: string): Promise<number | null> {
+/** Fetch current live price snapshot from backend (bypasses candle cache, 5s TTL on server) */
+async function fetchLiveSnapshot(sym: string): Promise<{ price: number; open: number; high: number; low: number; volume: number; change_pct: number | null } | null> {
   try {
-    // Use the 1D candle endpoint — most recent bar close reflects today's session
-    const res = await fetch(`${API_BASE}/api/chart/candles/${sym}?period=5d&interval=5m&_t=${Date.now()}`)
+    const res = await fetch(`${API_BASE}/api/chart/live-price/${sym}?_t=${Date.now()}`)
     if (!res.ok) return null
-    const data = await res.json()
-    const candles = data.candles || []
-    if (!candles.length) return null
-    return candles[candles.length - 1].close
+    return await res.json()
   } catch { return null }
 }
 
@@ -71,27 +67,73 @@ export function TradingViewWidget({
   ema8, ema21, ema50, triggerPrice, setupType,
 }: TradingViewWidgetProps) {
   const sym = sanitizeSymbol(symbol)
-  const containerRef    = useRef<HTMLDivElement>(null)
-  const chartRef        = useRef<any>(null)
-  const cleanupRef      = useRef<() => void>(() => {})
-  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<any>(null)
+  const cleanupRef = useRef<() => void>(() => {})
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const candleSeriesRef = useRef<any>(null)
-  const volSeriesRef    = useRef<any>(null)
-  const ema8Ref         = useRef<any>(null)
-  const ema21Ref        = useRef<any>(null)
-  const ema50Ref        = useRef<any>(null)
+  const volSeriesRef = useRef<any>(null)
+  const ema8Ref = useRef<any>(null)
+  const ema21Ref = useRef<any>(null)
+  const ema50Ref = useRef<any>(null)
+  // Store the last full candle data so we can update the last bar
+  const lastCandlesRef = useRef<any[]>([])
 
-  const [activeIV,      setActiveIV]      = useState<IVLabel>('1D')
-  const [isLoading,     setIsLoading]     = useState(false)
-  const [livePrice,     setLivePrice]     = useState<number | null>(null)
+  const [activeIV, setActiveIV] = useState<IVLabel>('1D')
+  const [isLoading, setIsLoading] = useState(false)
+  const [livePrice, setLivePrice] = useState<number | null>(null)
+  const [changePct, setChangePct] = useState<number | null>(null)
 
   const stopPoll = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }, [])
 
-  /** Soft-refresh: re-fetch candles + update series in place without rebuilding chart */
+  /**
+   * Live tick update: fetch snapshot from /api/chart/live-price and update
+   * ONLY the last candle bar in-place. This runs every 5 seconds and gives
+   * a real-time price tick without rebuilding the whole chart.
+   */
+  const tickUpdate = useCallback(async () => {
+    const cs = candleSeriesRef.current
+    if (!cs || !lastCandlesRef.current.length) return
+
+    const snap = await fetchLiveSnapshot(sym)
+    if (!snap || !snap.price) return
+
+    const candles = lastCandlesRef.current
+    const last = candles[candles.length - 1]
+    if (!last) return
+
+    // Build updated last bar with live price
+    const updatedBar = {
+      time: last.time,
+      open: last.open,
+      high: Math.max(last.high, snap.high ?? snap.price, snap.price),
+      low: Math.min(last.low, snap.low ?? snap.price, snap.price),
+      close: snap.price,
+    }
+
+    // Use update() for the last bar — lightweight-charts handles this efficiently
+    try {
+      cs.update(updatedBar)
+      // Update volume series last bar too
+      const vs = volSeriesRef.current
+      if (vs) {
+        vs.update({
+          time: last.time,
+          value: snap.volume ?? last.volume ?? 0,
+          color: snap.price >= last.open ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)',
+        })
+      }
+    } catch { /* silent — bar may be out of order during pre/post market */ }
+
+    setLivePrice(snap.price)
+    setChangePct(snap.change_pct ?? null)
+  }, [sym])
+
+  /** Full candle refresh: re-fetch all candles and rebuild series data (keeps price lines intact) */
   const softRefresh = useCallback(async (ivLabel: IVLabel) => {
-    const cs = candleSeriesRef.current; const vs = volSeriesRef.current
+    const cs = candleSeriesRef.current
     if (!cs) return
     const ivDef = INTERVALS.find(i => i.label === ivLabel)!
     try {
@@ -101,20 +143,29 @@ export function TradingViewWidget({
       const candles: any[] = data.candles || []
       if (!candles.length) return
 
+      lastCandlesRef.current = candles
+
       cs.setData(candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })))
+      const vs = volSeriesRef.current
       if (vs) vs.setData(candles.map(c => ({ time: c.time, value: c.volume ?? 0, color: c.close >= c.open ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)' })))
 
       const closes = candles.map(c => c.close)
-      const times  = candles.map(c => c.time)
+      const times = candles.map(c => c.time)
       const updateEMA = (series: any, period: number) => {
         if (!series) return
         const vals = calcEMA(closes, period)
         series.setData(vals.map((v, i) => ({ time: times[i], value: v })).filter((d: any) => !isNaN(d.value)))
       }
-      updateEMA(ema8Ref.current, 8); updateEMA(ema21Ref.current, 21); updateEMA(ema50Ref.current, 50)
+      updateEMA(ema8Ref.current, 8)
+      updateEMA(ema21Ref.current, 21)
+      updateEMA(ema50Ref.current, 50)
 
-      // Update live price display
-      setLivePrice(candles[candles.length - 1].close)
+      // If the backend already injected live price in last candle, show it
+      if (data.live_price) {
+        setLivePrice(data.live_price)
+      } else {
+        setLivePrice(candles[candles.length - 1].close)
+      }
     } catch { /* silent */ }
   }, [sym])
 
@@ -128,6 +179,7 @@ export function TradingViewWidget({
     cleanupRef.current(); container.innerHTML = ''
     chartRef.current = null; candleSeriesRef.current = null; volSeriesRef.current = null
     ema8Ref.current = null; ema21Ref.current = null; ema50Ref.current = null
+    lastCandlesRef.current = []
 
     const LW = window.LightweightCharts; const isDark = theme !== 'light'
     const chart = LW.createChart(container, {
@@ -145,11 +197,30 @@ export function TradingViewWidget({
     ro.observe(container)
     cleanupRef.current = () => { chart.remove(); ro.disconnect() }
 
-    // Fetch candles
+    // Fetch candles + live snapshot concurrently
     let candles: any[] = []
+    let livePriceFromServer: number | null = null
     try {
-      const res = await fetch(`${API_BASE}/api/chart/candles/${sym}?period=${ivDef.period}&interval=${ivDef.interval}`)
-      if (res.ok) { const data = await res.json(); candles = data.candles || [] }
+      const [candleRes, snapData] = await Promise.all([
+        fetch(`${API_BASE}/api/chart/candles/${sym}?period=${ivDef.period}&interval=${ivDef.interval}`),
+        fetchLiveSnapshot(sym),
+      ])
+      if (candleRes.ok) {
+        const data = await candleRes.json()
+        candles = data.candles || []
+        livePriceFromServer = data.live_price ?? null
+        // If server already patched last candle, great. If we also got a snap, use that (fresher)
+        if (snapData?.price && candles.length) {
+          livePriceFromServer = snapData.price
+          const last = candles[candles.length - 1]
+          candles[candles.length - 1] = {
+            ...last,
+            close: snapData.price,
+            high: Math.max(last.high, snapData.high ?? snapData.price, snapData.price),
+            low: Math.min(last.low, snapData.low ?? snapData.price, snapData.price),
+          }
+        }
+      }
     } catch { /* silent */ }
 
     setIsLoading(false)
@@ -160,6 +231,8 @@ export function TradingViewWidget({
       container.innerHTML = `<iframe src="https://www.tradingview.com/widgetembed/?${p}" style="width:100%;height:100%;border:none;display:block;" allowfullscreen title="${sym} chart"></iframe>`
       return
     }
+
+    lastCandlesRef.current = candles
 
     // ── Candlestick series ──
     const candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' })
@@ -180,26 +253,40 @@ export function TradingViewWidget({
       series.setData(vals.map((v, i) => ({ time: times[i], value: v })).filter((d: any) => !isNaN(d.value)))
       ref.current = series
     }
-    addEMASeries(8,  '#f59e0b', ema8Ref)   // amber
-    addEMASeries(21, '#818cf8', ema21Ref)  // indigo
-    addEMASeries(50, '#38bdf8', ema50Ref)  // sky
+    addEMASeries(8, '#f59e0b', ema8Ref)   // amber
+    addEMASeries(21, '#818cf8', ema21Ref) // indigo
+    addEMASeries(50, '#38bdf8', ema50Ref) // sky
 
     // ── Key level price lines (always shown on all timeframes) ──
     const LS = LW.LineStyle
     const addLine = (price: number, color: string, title: string, style: number) =>
       candleSeries.createPriceLine({ price, color, lineWidth: 1.5, lineStyle: style, axisLabelVisible: true, title })
 
-    if (entry       != null) addLine(entry,        '#06b6d4', direction === 'Short' ? 'Short Entry' : 'Buy Entry', LS?.Dashed ?? 1)
-    if (stop        != null) addLine(stop,         '#ef4444', 'Stop Loss',                                        LS?.Dashed ?? 1)
-    if (target      != null) addLine(target,       '#10b981', 'Target',                                           LS?.Dashed ?? 1)
-    if (triggerPrice != null) addLine(triggerPrice, '#f97316', `⚡ ${setupLabel(setupType)}`,                    LS?.Solid  ?? 0)
+    if (entry != null) addLine(entry, '#06b6d4', direction === 'Short' ? 'Short Entry' : 'Buy Entry', LS?.Dashed ?? 1)
+    if (stop != null) addLine(stop, '#ef4444', 'Stop Loss', LS?.Dashed ?? 1)
+    if (target != null) addLine(target, '#10b981', 'Target', LS?.Dashed ?? 1)
+    if (triggerPrice != null) addLine(triggerPrice, '#f97316', `⚡ ${setupLabel(setupType)}`, LS?.Solid ?? 0)
 
     chart.timeScale().fitContent()
-    setLivePrice(candles[candles.length - 1].close)
+    setLivePrice(livePriceFromServer ?? candles[candles.length - 1].close)
 
-    // ── Start polling ──
-    pollRef.current = setInterval(() => softRefresh(ivLabel), ivDef.pollMs)
-  }, [sym, theme, height, entry, stop, target, direction, triggerPrice, setupType, stopPoll, softRefresh])
+    // ── Start polling: live tick every 5s, full candle refresh per interval ──
+    // Tick poll (5s): updates only last bar from live-price endpoint
+    // Candle poll (interval-specific): refreshes all candle data
+    let candlePollCount = 0
+    const candlePollEvery = Math.round(ivDef.pollMs / 5_000) // how many ticks per candle refresh
+
+    pollRef.current = setInterval(async () => {
+      candlePollCount++
+      // Always do a live tick update
+      await tickUpdate()
+      // Periodically do a full candle refresh (to pick up new completed bars)
+      if (candlePollCount >= candlePollEvery) {
+        candlePollCount = 0
+        await softRefresh(ivLabel)
+      }
+    }, 5_000)
+  }, [sym, theme, height, entry, stop, target, direction, triggerPrice, setupType, stopPoll, tickUpdate, softRefresh])
 
   useEffect(() => {
     if (window.LightweightCharts) { buildChart('1D'); return }
@@ -212,9 +299,9 @@ export function TradingViewWidget({
 
   const handleIV = (ivLabel: IVLabel) => { setActiveIV(ivLabel); buildChart(ivLabel) }
 
-  const entryLabel  = direction === 'Short' ? 'Short Entry' : 'Buy Entry'
-  const hasTrade    = entry != null || stop != null || target != null || triggerPrice != null
-  const hasEmas     = ema8 != null || ema21 != null || ema50 != null
+  const entryLabel = direction === 'Short' ? 'Short Entry' : 'Buy Entry'
+  const hasTrade = entry != null || stop != null || target != null || triggerPrice != null
+  const hasEmas = ema8 != null || ema21 != null || ema50 != null
   const activeIVDef = INTERVALS.find(i => i.label === activeIV)!
 
   return (
@@ -239,10 +326,15 @@ export function TradingViewWidget({
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: 'monospace', color: '#22c55e', fontWeight: 700 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 4px #22c55e', display: 'inline-block', animation: 'pulse-green 1.5s ease-in-out infinite' }} />
             ${livePrice.toFixed(2)}
+            {changePct != null && (
+              <span style={{ fontSize: 10, color: changePct >= 0 ? '#22c55e' : '#ef4444', marginLeft: 2 }}>
+                {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
+              </span>
+            )}
           </span>
         )}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
-          {sym} · {activeIVDef.label}
+          {sym} · {activeIVDef.label} · LIVE
           {isLoading && ' · loading…'}
         </span>
       </div>
@@ -256,14 +348,14 @@ export function TradingViewWidget({
       {(hasTrade || hasEmas) && (
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '8px 14px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, background: '#0d1520' }}>
           <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 4 }}>Key Levels</span>
-          {ema8  != null && <Pill color="#f59e0b" bg="rgba(245,158,11,0.12)"  label="EMA 8"  value={ema8}  />}
+          {ema8 != null && <Pill color="#f59e0b" bg="rgba(245,158,11,0.12)" label="EMA 8" value={ema8} />}
           {ema21 != null && <Pill color="#818cf8" bg="rgba(129,140,248,0.12)" label="EMA 21" value={ema21} />}
-          {ema50 != null && <Pill color="#38bdf8" bg="rgba(56,189,248,0.12)"  label="EMA 50" value={ema50} />}
+          {ema50 != null && <Pill color="#38bdf8" bg="rgba(56,189,248,0.12)" label="EMA 50" value={ema50} />}
           {(hasEmas && hasTrade) && <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)', margin: '0 2px' }} />}
-          {triggerPrice != null && <Pill color="#f97316" bg="rgba(249,115,22,0.12)"  label={`⚡ ${setupLabel(setupType)}`} value={triggerPrice} />}
-          {entry  != null && <Pill color="#06b6d4" bg="rgba(6,182,212,0.12)"   label={entryLabel} value={entry}  />}
-          {stop   != null && <Pill color="#ef4444" bg="rgba(239,68,68,0.12)"   label="Stop Loss"  value={stop}   />}
-          {target != null && <Pill color="#10b981" bg="rgba(16,185,129,0.12)"  label="Target"     value={target} />}
+          {triggerPrice != null && <Pill color="#f97316" bg="rgba(249,115,22,0.12)" label={`⚡ ${setupLabel(setupType)}`} value={triggerPrice} />}
+          {entry != null && <Pill color="#06b6d4" bg="rgba(6,182,212,0.12)" label={entryLabel} value={entry} />}
+          {stop != null && <Pill color="#ef4444" bg="rgba(239,68,68,0.12)" label="Stop Loss" value={stop} />}
+          {target != null && <Pill color="#10b981" bg="rgba(16,185,129,0.12)" label="Target" value={target} />}
         </div>
       )}
     </div>
