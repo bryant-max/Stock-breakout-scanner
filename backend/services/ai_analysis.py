@@ -251,23 +251,40 @@ class AIAnalysisService:
             user_content.append({
                 "type": "text",
                 "text": (
-                    "Analyze this stock chart screenshot. Identify:\n"
-                    "1. The trend direction (uptrend, downtrend, sideways)\n"
-                    "2. Key support and resistance levels\n"
-                    "3. Any chart patterns (flat top, wedge, flag, cup & handle, etc.)\n"
-                    "4. Volume signals if visible\n"
-                    "5. Entry point, stop loss, and target recommendations\n"
-                    "Be specific with price levels where visible."
+                    "First, determine if this is a valid stock/crypto price chart. "
+                    "If it is NOT a valid price chart (e.g. it's a photo, document, meme, random image), "
+                    "respond ONLY with: 'ERROR: Not a valid stock chart. Please upload a screenshot of a price chart.'\n\n"
+                    "If it IS a valid chart, analyze it and provide:\n"
+                    "**Ticker**: [symbol if visible, else 'Unknown']\n"
+                    "**Trend**: [uptrend/downtrend/sideways]\n"
+                    "**Setup**: [flat top/wedge/flag/base/breakout/none identified]\n"
+                    "**Key Levels**:\n"
+                    "- Resistance: $[level]\n"
+                    "- Support: $[level]\n"
+                    "**Trade Setup**:\n"
+                    "- Entry: $[price or 'above $X on breakout']\n"
+                    "- Stop Loss: $[today's low of day — the lowest price visible today on the chart]\n"
+                    "- Target: $[level]\n"
+                    "**Volume**: [confirming/weak/not visible]\n"
+                    "**Bull Case**: [1-2 sentences on why this could be a winner]\n"
+                    "**Assessment**: [1-2 sentences overall read]\n"
+                    "Be specific with exact prices where visible on the chart."
                 ),
             })
         elif text_content:
             user_content.append({
                 "type": "text",
                 "text": (
-                    "Analyze the following news/content for stock trading opportunities. "
-                    "Identify key stocks mentioned, sentiment (bullish/bearish/neutral), "
-                    "and any potential trade setups or risks:\n\n"
-                    f"{text_content[:4000]}"
+                    "Analyze the following news or market content for trading opportunities.\n\n"
+                    "For each stock or ticker you identify, provide a structured breakdown:\n"
+                    "**[TICKER]** — [Company Name]\n"
+                    "- Sentiment: Bullish / Bearish / Neutral\n"
+                    "- Catalyst: [what the news says is driving the move]\n"
+                    "- Trade Idea: [entry area, stop = low of day, target]\n"
+                    "- Bull Case: [why this could be a winner based on the news]\n"
+                    "- Risk: [key risk factors]\n\n"
+                    "If no clear stocks are identified, say so.\n\n"
+                    f"CONTENT:\n{text_content[:4000]}"
                 ),
             })
         else:
@@ -352,7 +369,9 @@ Respond with this exact JSON:
   "suggested_target": <exact price number for take profit>,
   "suggested_dte": <integer days-to-expiry for the options play — e.g. 7 for very short-term, 14-21 for momentum, 30-45 for medium setups, 60+ for longer-term. Vary this based on the specific setup timeframe. Use null for stock-only plays>,
   "entry_notes": "<1 sentence on entry — where to buy or what to wait for>",
-  "stop_notes": "<1 sentence on stop loss placement>"
+  "stop_notes": "<1 sentence on stop loss — MUST be today's low of day price>",
+"bull_case": "<2-3 sentence fundamental bull case: why this could be a winner. Include business strengths, growth catalysts, sector tailwinds>",
+"fundamental_snapshot": ["<key fundamental point 1>", "<key fundamental point 2>", "<key fundamental point 3>"]
 }}"""
 
         try:
@@ -405,6 +424,8 @@ Respond with this exact JSON:
                 "suggested_expiry": None,  # resolved from live options chain in scan_routes
                 "entry_notes": data.get("entry_notes", ""),
                 "stop_notes": data.get("stop_notes", ""),
+                "bull_case": data.get("bull_case", ""),
+                "fundamental_snapshot": data.get("fundamental_snapshot", []),
             }
         except Exception as e:
             logger.error(f"AI analysis failed for {sym}: {e}")
