@@ -408,7 +408,13 @@ export function StockScanner() {
                     {symbolResult.recommendation}
                   </Badge>
                   {symbolResult.passes_breakout_filter && (
-                    <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs">Breakout Setup</Badge>
+                    <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs">
+                    {symbolResult.setup_type === 'FLAT_TOP' ? '📊 Flat Top'
+                      : symbolResult.setup_type === 'FLAG' ? '🚩 Bull Flag'
+                      : symbolResult.setup_type === 'WEDGE' ? '📐 Wedge'
+                      : symbolResult.setup_type === 'BASE' ? '🏗️ Base Breakout'
+                      : '⚡ Breakout Setup'}
+                  </Badge>
                   )}
                 </div>
                 <p className="text-white/50 text-sm">{symbolResult.trend}</p>
