@@ -34,7 +34,6 @@ def cluster_resistance_levels(
     clusters.sort(key=lambda x: x.touches, reverse=True)
     return clusters
 
-
 def find_inside_day_high(candles: List[Candle]) -> Optional[float]:
     """Find inside day high (price contained within previous candle)."""
     if len(candles) < 3:
@@ -45,53 +44,69 @@ def find_inside_day_high(candles: List[Candle]) -> Optional[float]:
         return b.h
     return None
 
-
 def pick_trigger_price(candles: List[Candle]) -> dict:
     """
     Select breakout trigger level.
 
     Rule: Breakout level = range high or highest daily close of the range.
 
-    - Use the last 40 candles as the consolidation window (current range).
-    - range_high    = max intraday high  in that window
-    - highest_close = max daily close    in that window
+    The 'range' is the CONSOLIDATION zone, identified by pivot-high clustering.
+    We do NOT use a raw rolling-window max (which would grab spike highs above
+    actual resistance and inflate the breakout level incorrectly).
 
-    For FLAT_TOP setups (cluster >= 3 touches of pivot highs):
-        trigger = highest_close  — price must CLOSE above flat resistance to confirm.
-
-    For all other setups (wedge, flag, base, swing high):
-        trigger = range_high     — the top of the range is the breakout line.
-
-    Cluster detection is still used to identify FLAT_TOP (drives setup_type),
-    but the trigger VALUE comes from range_high / highest_close, not the cluster mean.
+    Logic:
+    - Find pivot highs in the last 60 candles, cluster them by proximity (0.3%).
+    - Look for the best cluster at or near current price (the ceiling of the base).
+    - FLAT_TOP (cluster >= 3 touches):
+        trigger = highest daily CLOSE among candles that touched that cluster level.
+        This is the "highest daily close of the range" the user specified.
+    - All others (Base/Wedge/Flag):
+        trigger = highest pivot high (the "range high" of the consolidation).
     """
-    # --- Consolidation window: last 40 trading days ---
-    RANGE_WINDOW = 40
-    range_candles = candles[-RANGE_WINDOW:] if len(candles) >= RANGE_WINDOW else candles
+    price = candles[-1].c
 
-    range_high     = max(c.h for c in range_candles)
-    highest_close  = max(c.c for c in range_candles)
-
-    # --- Flat top detection via pivot-high clustering ---
+    # --- Pivot-high clustering ---
     pivots = pivot_highs(candles, 3, 3)
     recent_pivots = pivots[-20:] if len(pivots) > 20 else pivots
-    pivot_prices  = [p.price for p in recent_pivots]
+    pivot_prices = [p.price for p in recent_pivots]
 
     clusters = cluster_resistance_levels(pivot_prices, 0.3)
-    best_cluster = clusters[0] if clusters else None
+
+    # Find best cluster at or near current price (the overhead resistance ceiling)
+    # Accept cluster within 3% below price (stock coiling just under resistance)
+    # or any level above price
+    best_cluster = None
+    for c in clusters:
+        if c.level >= price * 0.97:
+            best_cluster = c
+            break
 
     cluster_touches = 0
-    reason = "RANGE_HIGH"
+    reason = "PIVOT_HIGH"
 
     if best_cluster and best_cluster.touches >= 3:
-        # Flat top confirmed — use highest close so trigger = level price must close above
-        trigger = highest_close
-        reason  = "FLAT_TOP_HIGHEST_CLOSE"
+        # FLAT_TOP confirmed.
+        # trigger = highest daily CLOSE among candles near the cluster level.
+        cluster_level = best_cluster.level
+        tol = cluster_level * 0.005  # 0.5% band around cluster
+        cluster_candles = [
+            c for c in candles[-60:]
+            if c.h >= cluster_level - tol
+        ]
+        if cluster_candles:
+            trigger = max(c.c for c in cluster_candles)
+        else:
+            trigger = cluster_level
+        reason = "FLAT_TOP_HIGHEST_CLOSE"
         cluster_touches = best_cluster.touches
+    elif pivot_prices:
+        # Base / wedge / flag — use highest pivot high = range high of consolidation
+        trigger = max(pivot_prices)
+        reason = "PIVOT_RANGE_HIGH"
     else:
-        # Base / wedge / flag / swing — use intraday range high as breakout line
-        trigger = range_high
-        reason  = "RANGE_HIGH"
+        # Fallback: recent high
+        trigger = max(c.h for c in candles[-60:]) if len(candles) >= 60 else max(c.h for c in candles)
+        reason = "RECENT_HIGH_FALLBACK"
 
     return {
         "trigger": trigger,
