@@ -547,7 +547,7 @@ async def place_options_order(
     """Place a live options order via SnapTrade."""
     try:
         from services.supabase_client import supabase as _supabase
-        from services.snaptrade_service import SnapTradeService, snaptrade
+        from services.snaptrade_service import SnapTradeService
 
         user_id = current_user["user_id"]
 
@@ -558,18 +558,19 @@ async def place_options_order(
 
         service = SnapTradeService()
         accounts = await service.list_accounts(user_id, user_secret)
-        account_ids = {a["id"] for a in accounts}
+        account_ids = {str(a.get("id") or a.get("accountId", "")) for a in (accounts or [])}
         if order.account_id not in account_ids:
             raise HTTPException(status_code=403, detail="Account does not belong to authenticated user")
 
-        result = await snaptrade.place_order(
+        result = await service.place_order(
             user_id=user_id,
+            user_secret=user_secret,
             account_id=order.account_id,
             symbol=order.option_symbol,
             action=order.action,
             order_type=order.order_type,
             quantity=order.quantity,
-            limit_price=order.limit_price,
+            price=order.limit_price,
         )
         return {"order": result, "status": "submitted"}
     except HTTPException:
@@ -577,7 +578,6 @@ async def place_options_order(
     except Exception as e:
         logger.error("Error placing options order: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/paper-trade", status_code=201)
 @limiter.limit("20/minute")
