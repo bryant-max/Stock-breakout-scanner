@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, RedirectResponse
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -30,13 +30,18 @@ app = FastAPI(title="Stock Scanner API", description="Breakout pattern scanner w
 _PRODUCTION_ORIGINS = [
     "https://www.orbistrading.io",
     "https://orbistrading.io",
+    # Vercel preview deployments
+    "https://stock-breakout-scanner-sage.vercel.app",
+    "https://stock-breakout-scanner-git-main-bryant-maxs-projects.vercel.app",
 ]
 
-allowed_origins = _PRODUCTION_ORIGINS + [
-    origin.strip()
-    for origin in settings.CORS_ORIGINS.split(",")
-    if origin.strip() and origin.strip() not in _PRODUCTION_ORIGINS
-]
+allowed_origins = list(_PRODUCTION_ORIGINS)
+
+# Settings-based extra origins (comma-separated env var)
+for origin in settings.CORS_ORIGINS.split(","):
+    o = origin.strip()
+    if o and o not in allowed_origins:
+        allowed_origins.append(o)
 
 # FRONTEND_URL env var adds extra origins (e.g. preview deployments).
 if settings.FRONTEND_URL and settings.FRONTEND_URL not in allowed_origins:
@@ -66,10 +71,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        # Note: Strict-Transport-Security is intentionally omitted here;
-        # Railway/Vercel inject it at the edge to avoid duplicate headers.
         return response
-
 
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -96,6 +98,11 @@ app.include_router(chart_routes.router, prefix="/api/chart", tags=["Chart"])
 @app.get("/", tags=["Root"])
 async def root():
     return {"name": "Stock Scanner API", "version": "2.0.0", "status": "operational", "docs": "/docs"}
+
+@app.get("/health", tags=["Health"])
+async def health_alias():
+    """Alias for /api/health — convenient shortcut."""
+    return await health_check()
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
