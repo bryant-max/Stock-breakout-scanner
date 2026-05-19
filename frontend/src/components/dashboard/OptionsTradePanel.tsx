@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { BarChart3, ShoppingCart, X, ArrowLeft, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { BarChart3, ShoppingCart, X, ArrowLeft, CheckCircle, AlertCircle, Loader2, ChevronDown } from "lucide-react"
 import { OptionsChain, OptionsContract } from "./OptionsChain"
 import { cn } from "@/lib/utils"
 
@@ -29,6 +29,12 @@ type PanelTab = "chain" | "trade"
 type Action = "BUY" | "SELL"
 type OrderType = "Market" | "Limit"
 type PlaceStatus = "idle" | "reviewing" | "loading" | "success" | "error"
+
+// Display label for each order type (mirrors TradeModal)
+const ORDER_TYPE_LABELS: Record<OrderType, string> = {
+  Market: "Market",
+  Limit: "Buy Stop",
+}
 
 export function OptionsTradePanel({ ticker, isOpen, onClose, initialContract }: OptionsTradePanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>(initialContract ? "trade" : "chain")
@@ -169,6 +175,9 @@ export function OptionsTradePanel({ ticker, isOpen, onClose, initialContract }: 
   }
 
   if (!isOpen) return null
+
+  // Shared select class — solid dark bg so option text is always readable
+  const selectCls = "w-full bg-neutral-900 border border-neutral-700 text-white text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-cyan-500 cursor-pointer"
 
   return (
     <div
@@ -315,18 +324,21 @@ export function OptionsTradePanel({ ticker, isOpen, onClose, initialContract }: 
                   {/* Account selector */}
                   <div>
                     <label className="text-xs text-zinc-400 block mb-1.5">Account</label>
-                    <select
-                      value={selectedAccountId}
-                      onChange={(e) => setSelectedAccountId(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-cyan-500"
-                    >
-                      <option value="paper">Paper Trading (simulated)</option>
-                      {accounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.name}{acc.institution_name ? ` — ${acc.institution_name}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        value={selectedAccountId}
+                        onChange={(e) => setSelectedAccountId(e.target.value)}
+                        className={selectCls}
+                      >
+                        <option value="paper" className="bg-neutral-900 text-white">Paper Trading (simulated)</option>
+                        {accounts.map((acc) => (
+                          <option key={acc.id} value={acc.id} className="bg-neutral-900 text-white">
+                            {acc.name}{acc.institution_name ? ` — ${acc.institution_name}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+                    </div>
                   </div>
 
                   {/* BUY / SELL toggle */}
@@ -350,7 +362,7 @@ export function OptionsTradePanel({ ticker, isOpen, onClose, initialContract }: 
                     </div>
                   </div>
 
-                  {/* Market / Limit toggle */}
+                  {/* Order Type toggle — shows friendly labels */}
                   <div>
                     <label className="text-xs text-zinc-400 block mb-1.5">Order Type</label>
                     <div className="flex rounded-lg overflow-hidden border border-zinc-700">
@@ -365,16 +377,16 @@ export function OptionsTradePanel({ ticker, isOpen, onClose, initialContract }: 
                               : "bg-zinc-800 text-zinc-400 hover:text-white"
                           )}
                         >
-                          {t}
+                          {ORDER_TYPE_LABELS[t]}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* Limit price input */}
+                  {/* Buy Stop price input (shown when Buy Stop / Limit selected) */}
                   {orderType === "Limit" && (
                     <div>
-                      <label className="text-xs text-zinc-400 block mb-1.5">Limit Price</label>
+                      <label className="text-xs text-zinc-400 block mb-1.5">Buy Stop Price</label>
                       <input
                         type="number"
                         min={0.01}
@@ -443,11 +455,11 @@ export function OptionsTradePanel({ ticker, isOpen, onClose, initialContract }: 
                         </div>
                         <div className="flex justify-between">
                           <span className="text-zinc-400">Order Type</span>
-                          <span className="text-white">{orderType}</span>
+                          <span className="text-white font-semibold">{ORDER_TYPE_LABELS[orderType]}</span>
                         </div>
                         {orderType === "Limit" && limitPrice && (
                           <div className="flex justify-between">
-                            <span className="text-zinc-400">Limit Price</span>
+                            <span className="text-zinc-400">Buy Stop Price</span>
                             <span className="text-white">${parseFloat(limitPrice).toFixed(2)}</span>
                           </div>
                         )}
