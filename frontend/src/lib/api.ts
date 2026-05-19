@@ -3,6 +3,64 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 const API_BASE = `${API_URL}/api/v1`
 
+/**
+ * Central fetch wrapper — converts network-level failures ("Failed to fetch",
+ * CORS errors, backend unreachable) into clear, actionable error messages
+ * so users never see the raw browser TypeError.
+ */
+async function apiFetch(
+  url: string,
+  options?: RequestInit,
+  fallback?: unknown
+): Promise<Response> {
+  try {
+    const resp = await fetch(url, options)
+    return resp
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const isNetworkError =
+      msg.toLowerCase().includes("failed to fetch") ||
+      msg.toLowerCase().includes("network request failed") ||
+      msg.toLowerCase().includes("networkerror") ||
+      msg.toLowerCase().includes("load failed") ||
+      msg.toLowerCase().includes("cors")
+    if (isNetworkError) {
+      throw new Error(
+        "Cannot reach the Orbis server. " +
+        "Please check your internet connection and try again. " +
+        "If the issue persists, the service may be temporarily down."
+      )
+    }
+    throw err
+  }
+}
+
+/**
+ * Parse a Response — handles both JSON error bodies and plain text.
+ * Throws with a clean message on non-OK status.
+ */
+async function parseResponse<T>(resp: Response, fallback?: T): Promise<T> {
+  if (resp.ok) return resp.json() as Promise<T>
+  // Try to extract a detail message from JSON body
+  let detail = `Server error (${resp.status})`
+  try {
+    const body = await resp.json()
+    if (body?.detail) detail = String(body.detail)
+    else if (body?.message) detail = String(body.message)
+    else if (body?.error) detail = String(body.error)
+  } catch {
+    try { detail = await resp.text() || detail } catch { /* ignore */ }
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error("You need to be logged in to use this feature.")
+  }
+  if (resp.status >= 500) {
+    throw new Error(`Orbis server error — please try again in a moment. (${detail})`)
+  }
+  throw new Error(detail)
+}
+
+
 // Types matching backend models
 export interface AIStockRating {
   symbol: string
@@ -87,7 +145,7 @@ export async function aiAnalyzeScan(
   top_n: number = 10
 ): Promise<AIAnalyzeResponse> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/scan/ai-analyze?top_n=${top_n}`, {
+  const response = await apiFetch(`${API_URL}/api/scan/ai-analyze?top_n=${top_n}`, {
     method: "POST",
     headers,
     body: JSON.stringify(request),
@@ -110,7 +168,7 @@ export async function analyzeContent(opts: {
   mediaType?: string
 }): Promise<string> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/scan/analyze-content`, {
+  const response = await apiFetch(`${API_URL}/api/scan/analyze-content`, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -132,7 +190,7 @@ export async function analyzeContent(opts: {
  */
 export async function aiScanSymbol(symbol: string): Promise<AISymbolAnalysis> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/scan/symbol/ai`, {
+  const response = await apiFetch(`${API_URL}/api/scan/symbol/ai`, {
     method: "POST",
     headers,
     body: JSON.stringify({ symbol }),
@@ -150,7 +208,7 @@ export async function aiScanSymbol(symbol: string): Promise<AISymbolAnalysis> {
  */
 export async function scanSymbol(symbol: string): Promise<ScanResult | null> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/scan/symbol`, {
+  const response = await apiFetch(`${API_URL}/api/scan/symbol`, {
     method: "POST",
     headers,
     body: JSON.stringify({ symbol }),
@@ -173,7 +231,7 @@ export async function healthCheck(): Promise<{
   polygon_api: boolean
   supabase: boolean
 }> {
-  const response = await fetch(`${API_URL}/api/health`)
+  const response = await apiFetch(`${API_URL}/api/health`)
   return response.json()
 }
 
@@ -200,7 +258,7 @@ export async function getMomentumStocks(
   direction: "gainers" | "losers" = "gainers"
 ): Promise<{ stocks: MomentumStock[]; marketOpen: boolean }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/momentum/stocks?direction=${direction}`,
     { headers }
   )
@@ -241,7 +299,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
  */
 export async function getWatchlist(): Promise<WatchlistItem[]> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/watchlist/`, { headers })
+  const response = await apiFetch(`${API_URL}/api/watchlist/`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch watchlist")
@@ -257,7 +315,7 @@ export async function addToWatchlist(
   notes?: string
 ): Promise<WatchlistItem> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/watchlist/`, {
+  const response = await apiFetch(`${API_URL}/api/watchlist/`, {
     method: "POST",
     headers,
     body: JSON.stringify({ symbol: symbol.toUpperCase(), notes }),
@@ -274,7 +332,7 @@ export async function addToWatchlist(
  */
 export async function removeFromWatchlist(symbol: string): Promise<void> {
   const headers = await getAuthHeaders()
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/watchlist/${symbol.toUpperCase()}`,
     { method: "DELETE", headers }
   )
@@ -291,7 +349,7 @@ export async function checkInWatchlist(
   symbol: string
 ): Promise<{ symbol: string; in_watchlist: boolean }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/watchlist/${symbol.toUpperCase()}/check`,
     { headers }
   )
@@ -340,7 +398,7 @@ export interface SnapTradeActivity {
  */
 export async function snaptradeRegister(): Promise<{ status: string; user_id: string }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/register`, {
+  const response = await apiFetch(`${API_URL}/api/snaptrade/register`, {
     method: "POST",
     headers,
   })
@@ -359,7 +417,7 @@ export async function snaptradeRegister(): Promise<{ status: string; user_id: st
 export async function snaptradeGetConnectUrl(redirectUri?: string): Promise<{ redirect_url: string }> {
   const headers = await getAuthHeaders()
   const params = redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : ""
-  const response = await fetch(`${API_URL}/api/snaptrade/connect${params}`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/connect${params}`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to get connect URL")
@@ -379,7 +437,7 @@ export interface SnapTradeAuthorization {
  */
 export async function snaptradeListAuthorizations(): Promise<SnapTradeAuthorization[]> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/authorizations`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/authorizations`, { headers })
   if (!response.ok) return []
   const data = await response.json()
   return data.authorizations ?? []
@@ -390,7 +448,7 @@ export async function snaptradeListAuthorizations(): Promise<SnapTradeAuthorizat
  */
 export async function snaptradeUnlinkAccount(authorizationId: string): Promise<void> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/authorizations/${encodeURIComponent(authorizationId)}`, {
+  const response = await apiFetch(`${API_URL}/api/snaptrade/authorizations/${encodeURIComponent(authorizationId)}`, {
     method: "DELETE",
     headers,
   })
@@ -409,7 +467,7 @@ export async function snaptradeGetStatus(): Promise<{
   accounts: SnapTradeAccount[]
 }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/status`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/status`, { headers })
   if (!response.ok) {
     return { registered: false, accounts_linked: 0, accounts: [] }
   }
@@ -423,7 +481,7 @@ export async function snaptradeGetHoldings(): Promise<{
   holdings: Array<{ account: SnapTradeAccount; holdings: SnapTradeHolding[] }>
 }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/holdings`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/holdings`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch holdings")
@@ -438,7 +496,7 @@ export async function snaptradeGetAccountHoldings(accountId: string): Promise<{
   holdings: SnapTradeHolding[]
 }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/holdings/${accountId}`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/holdings/${accountId}`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch account holdings")
@@ -453,7 +511,7 @@ export async function snaptradeGetBalances(accountId: string): Promise<{
   balances: Array<{ currency?: { code?: string }; cash?: number; buying_power?: number }>
 }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/accounts/${accountId}/balances`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/accounts/${accountId}/balances`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch balances")
@@ -475,7 +533,7 @@ export async function snaptradeGetActivities(params?: {
   if (params?.end_date) query.set("end_date", params.end_date)
   if (params?.account_id) query.set("account_id", params.account_id)
 
-  const response = await fetch(`${API_URL}/api/snaptrade/activities?${query}`, { headers })
+  const response = await apiFetch(`${API_URL}/api/snaptrade/activities?${query}`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch activities")
@@ -488,7 +546,7 @@ export async function snaptradeGetActivities(params?: {
  */
 export async function snaptradeDisconnect(): Promise<{ status: string }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/disconnect`, {
+  const response = await apiFetch(`${API_URL}/api/snaptrade/disconnect`, {
     method: "POST",
     headers,
   })
@@ -513,7 +571,7 @@ export async function snaptradePlaceOrder(order: {
   time_in_force?: string
 }): Promise<{ order: unknown }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/order/place`, {
+  const response = await apiFetch(`${API_URL}/api/snaptrade/order/place`, {
     method: "POST",
     headers,
     body: JSON.stringify(order),
@@ -537,7 +595,7 @@ export async function snaptradePreviewOrder(order: {
   price?: number
 }): Promise<{ impact: unknown }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/order/preview`, {
+  const response = await apiFetch(`${API_URL}/api/snaptrade/order/preview`, {
     method: "POST",
     headers,
     body: JSON.stringify(order),
@@ -566,7 +624,7 @@ export interface TrainingContent {
 
 export async function getTrainingContent(): Promise<TrainingContent[]> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/training/`, { headers })
+  const response = await apiFetch(`${API_URL}/api/ai/training/`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch training content")
@@ -581,7 +639,7 @@ export async function createTrainingContent(data: {
   tags?: string[]
 }): Promise<TrainingContent> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/training/`, {
+  const response = await apiFetch(`${API_URL}/api/ai/training/`, {
     method: "POST",
     headers,
     body: JSON.stringify(data),
@@ -598,7 +656,7 @@ export async function updateTrainingContent(
   data: { title?: string; content?: string; tags?: string[]; is_active?: boolean }
 ): Promise<TrainingContent> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/training/${id}`, {
+  const response = await apiFetch(`${API_URL}/api/ai/training/${id}`, {
     method: "PUT",
     headers,
     body: JSON.stringify(data),
@@ -612,7 +670,7 @@ export async function updateTrainingContent(
 
 export async function deleteTrainingContent(id: string): Promise<void> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/training/${id}`, {
+  const response = await apiFetch(`${API_URL}/api/ai/training/${id}`, {
     method: "DELETE",
     headers,
   })
@@ -627,7 +685,7 @@ export async function importYoutubeTranscript(
   tags: string[] = []
 ): Promise<TrainingContent> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/training/youtube`, {
+  const response = await apiFetch(`${API_URL}/api/ai/training/youtube`, {
     method: "POST",
     headers,
     body: JSON.stringify({ url, tags }),
@@ -641,7 +699,7 @@ export async function importYoutubeTranscript(
 
 export async function toggleTrainingContent(id: string): Promise<TrainingContent> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/training/${id}/toggle`, {
+  const response = await apiFetch(`${API_URL}/api/ai/training/${id}/toggle`, {
     method: "PATCH",
     headers,
   })
@@ -683,7 +741,7 @@ export async function logTradeOutcome(data: {
   traded_at?: string
 }): Promise<TradeOutcome> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/trades/outcome`, {
+  const response = await apiFetch(`${API_URL}/api/trades/outcome`, {
     method: "POST",
     headers,
     body: JSON.stringify(data),
@@ -700,7 +758,7 @@ export async function updateTradeOutcome(
   data: { exit_price?: number; gain_pct?: number; outcome?: string; notes?: string }
 ): Promise<TradeOutcome> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/trades/outcome/${tradeId}`, {
+  const response = await apiFetch(`${API_URL}/api/trades/outcome/${tradeId}`, {
     method: "PUT",
     headers,
     body: JSON.stringify(data),
@@ -714,7 +772,7 @@ export async function updateTradeOutcome(
 
 export async function getTradeOutcomes(limit = 50): Promise<{ outcomes: TradeOutcome[] }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/trades/outcomes?limit=${limit}`, { headers })
+  const response = await apiFetch(`${API_URL}/api/trades/outcomes?limit=${limit}`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch trade outcomes")
@@ -735,7 +793,7 @@ export interface AIQueryLog {
 
 export async function getAIQueryLog(limit = 50): Promise<{ queries: AIQueryLog[] }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/ai/query-log?limit=${limit}`, { headers })
+  const response = await apiFetch(`${API_URL}/api/ai/query-log?limit=${limit}`, { headers })
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.detail || "Failed to fetch query log")
@@ -749,7 +807,7 @@ export async function getAIQueryLog(limit = 50): Promise<{ queries: AIQueryLog[]
 
 export async function snaptradeSearchSymbols(query: string): Promise<{ symbols: unknown[] }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/snaptrade/symbols/search`, {
+  const response = await apiFetch(`${API_URL}/api/snaptrade/symbols/search`, {
     method: "POST",
     headers,
     body: JSON.stringify({ query }),
@@ -819,7 +877,7 @@ export async function getOptionsChain(
   if (opts.contract_type) params.set("contract_type", opts.contract_type)
   if (opts.limit) params.set("limit", String(opts.limit))
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/options/chain/${symbol}?${params}`,
     { headers }
   )
@@ -835,7 +893,7 @@ export async function getOptionsChain(
  */
 export async function placePaperTrade(body: PaperTradeCreate): Promise<Record<string, unknown>> {
   const headers = await getAuthHeaders()
-  const response = await fetch(`${API_URL}/api/options/paper-trade`, {
+  const response = await apiFetch(`${API_URL}/api/options/paper-trade`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -852,7 +910,7 @@ export async function placePaperTrade(body: PaperTradeCreate): Promise<Record<st
  */
 export async function getPaperTrades(limit = 50): Promise<{ trades: Record<string, unknown>[] }> {
   const headers = await getAuthHeaders()
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/options/paper-trades?limit=${limit}`,
     { headers }
   )
@@ -878,7 +936,7 @@ export async function getWatchlistPrices(
 ): Promise<Record<string, TickerPrice>> {
   if (!symbols.length) return {}
   const headers = await getAuthHeaders()
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/watchlist/prices?symbols=${symbols.join(",")}`,
     { headers }
   )
@@ -908,7 +966,7 @@ export interface LastScan {
 
 export async function getLastScan(symbol: string): Promise<LastScan | null> {
   const headers = await getAuthHeaders()
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/watchlist/${symbol.toUpperCase()}/last-scan`,
     { headers }
   )
